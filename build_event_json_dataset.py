@@ -12,6 +12,7 @@ DIFFICULTY_NAME_MAP = {
     "5": "master",
     "6": "remaster",
 }
+ALL_DIFFICULTIES = ["4", "5", "6"]
 
 
 def discover_chart_files(charts_root: Path) -> List[Path]:
@@ -36,6 +37,12 @@ def process_chart_file(
     return parser_impl.parse_chart_section(lines)
 
 
+def resolve_difficulties(difficulty_arg: str) -> List[str]:
+    if difficulty_arg == "all":
+        return ALL_DIFFICULTIES
+    return [difficulty_arg]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Batch-convert Simai chart txt files into event-json files.")
     parser.add_argument(
@@ -47,9 +54,9 @@ def main() -> None:
     parser.add_argument(
         "--difficulty",
         type=str,
-        default="6",
-        choices=["4", "5", "6"],
-        help="Difficulty section to export",
+        default="all",
+        choices=["4", "5", "6", "all"],
+        help="Difficulty section to export, or `all` for expert/master/remaster together",
     )
     parser.add_argument(
         "--output-dir",
@@ -73,26 +80,30 @@ def main() -> None:
         chart_files = chart_files[: args.limit]
 
     parser_impl = SimaiMVPParserV2()
+    difficulties = resolve_difficulties(args.difficulty)
     written = 0
     skipped = 0
 
     for chart_file in tqdm(chart_files):
-        try:
-            records = process_chart_file(parser_impl, chart_file, args.difficulty)
-            if not records:
-                skipped += 1
-                continue
+        wrote_any = False
+        for difficulty in difficulties:
+            try:
+                records = process_chart_file(parser_impl, chart_file, difficulty)
+                if not records:
+                    continue
 
-            output_name = build_output_name(chart_file, args.difficulty)
-            output_path = output_dir / output_name
-            output_path.write_text(
-                json.dumps(records, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-            written += 1
-        except Exception as exc:
+                output_name = build_output_name(chart_file, difficulty)
+                output_path = output_dir / output_name
+                output_path.write_text(
+                    json.dumps(records, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                written += 1
+                wrote_any = True
+            except Exception as exc:
+                print(f"skip {chart_file} difficulty={difficulty}: {exc}")
+        if not wrote_any:
             skipped += 1
-            print(f"skip {chart_file}: {exc}")
 
     print(f"written={written}")
     print(f"skipped={skipped}")

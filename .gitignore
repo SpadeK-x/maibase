@@ -9,4 +9,6 @@ __pycache__/
 events_expert/
 events_master/
 events_remaster/
+events_all/
+encoded_all/
 charts/

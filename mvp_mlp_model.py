@@ -12,7 +12,7 @@ class MLPConfig:
     event_embed_dim: int = 64
     classifier_hidden_dim: int = 128
     num_classes: int = 4
-    dropout: float = 0.2
+    dropout: float = 0.4
     pooling: str = "mean"
 
 

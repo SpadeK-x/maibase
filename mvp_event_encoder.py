@@ -1,7 +1,7 @@
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import torch
 from torch.utils.data import Dataset
@@ -25,6 +25,43 @@ SLIDE_SHAPE_GROUP_DIM = len(SLIDE_SHAPE_GROUP_VOCAB)  # 5
 OUTER_IDX_DIM = OUTER_SLOT_VOCAB_SIZE * 2  # 18
 NUMERIC_DIM = 18
 INPUT_DIM = EVENT_TYPE_DIM + EVENT_TRAIT_DIM + SLIDE_SHAPE_GROUP_DIM + OUTER_IDX_DIM + NUMERIC_DIM + INNER_MASK_DIM
+
+NUMERIC_BLOCK_START = EVENT_TYPE_DIM + EVENT_TRAIT_DIM + SLIDE_SHAPE_GROUP_DIM + OUTER_IDX_DIM
+NUMERIC_BLOCK_END = NUMERIC_BLOCK_START + NUMERIC_DIM
+
+NUMERIC_FIELD_ORDER = [
+    "delta_time",
+    "outer_active",
+    "outer_pos_sin_1",
+    "outer_pos_cos_1",
+    "outer_pos_sin_2",
+    "outer_pos_cos_2",
+    "inner_count",
+    "cross_zone_flag",
+    "outer_move_dist",
+    "inner_add_count",
+    "inner_remove_count",
+    "hold_active",
+    "hold_remaining_time",
+    "slide_active",
+    "slide_remaining_time",
+    "slide_span",
+    "slide_conflict_flag",
+    "local_density_500ms",
+]
+
+STANDARDIZED_NUMERIC_FIELDS = [
+    "delta_time",
+    "inner_count",
+    "outer_move_dist",
+    "inner_add_count",
+    "inner_remove_count",
+    "hold_remaining_time",
+    "slide_remaining_time",
+    "slide_span",
+    "local_density_500ms",
+]
+STANDARDIZED_NUMERIC_INDICES = [NUMERIC_FIELD_ORDER.index(name) for name in STANDARDIZED_NUMERIC_FIELDS]
 
 
 def one_hot(index: int, size: int) -> List[float]:
@@ -56,6 +93,12 @@ class EncodedChart:
     meta: Optional[Dict[str, object]] = None
 
 
+@dataclass
+class NumericNormalizerState:
+    mean: torch.Tensor
+    std: torch.Tensor
+
+
 class MVPEventEncoder:
     """
     Encodes one parsed event record into the fixed 84-dim input vector for the MVP MLP.
@@ -63,7 +106,11 @@ class MVPEventEncoder:
 
     input_dim: int = INPUT_DIM
 
-    def encode_event(self, record: Dict[str, object]) -> List[float]:
+    def __init__(self) -> None:
+        self.numeric_mean: Optional[torch.Tensor] = None
+        self.numeric_std: Optional[torch.Tensor] = None
+
+    def encode_event(self, record: Dict[str, object], apply_normalization: bool = True) -> List[float]:
         event_type = str(record["event_type"])
         event_trait = str(record["event_trait"])
         slide_shape_group = str(record["slide_shape_group"])
@@ -90,27 +137,6 @@ class MVPEventEncoder:
         vector.extend(one_hot(int(outer_idx[1]), OUTER_SLOT_VOCAB_SIZE))
 
         # 2. numeric block (18 dims, fixed order)
-        numeric_fields = [
-            "delta_time",
-            "outer_active",
-            None,  # outer_pos_sin[0]
-            None,  # outer_pos_cos[0]
-            None,  # outer_pos_sin[1]
-            None,  # outer_pos_cos[1]
-            "inner_count",
-            "cross_zone_flag",
-            "outer_move_dist",
-            "inner_add_count",
-            "inner_remove_count",
-            "hold_active",
-            "hold_remaining_time",
-            "slide_active",
-            "slide_remaining_time",
-            "slide_span",
-            "slide_conflict_flag",
-            "local_density_500ms",
-        ]
-
         vector.append(normalize_numeric(record["delta_time"]))
         vector.append(normalize_numeric(record["outer_active"]))
         vector.append(normalize_numeric(outer_pos_sin[0]))
@@ -135,10 +161,23 @@ class MVPEventEncoder:
 
         if len(vector) != self.input_dim:
             raise ValueError(f"Encoded event dim mismatch: expected {self.input_dim}, got {len(vector)}")
+        if apply_normalization:
+            vector = self.apply_numeric_normalization(vector)
         return vector
 
-    def encode_records(self, records: Sequence[Dict[str, object]]) -> torch.Tensor:
-        rows = [self.encode_event(record) for record in records]
+    def apply_numeric_normalization(self, vector: List[float]) -> List[float]:
+        if self.numeric_mean is None or self.numeric_std is None:
+            return vector
+        normalized = list(vector)
+        for local_idx, field_idx in enumerate(STANDARDIZED_NUMERIC_INDICES):
+            absolute_idx = NUMERIC_BLOCK_START + field_idx
+            normalized[absolute_idx] = (
+                normalized[absolute_idx] - float(self.numeric_mean[local_idx].item())
+            ) / float(self.numeric_std[local_idx].item())
+        return normalized
+
+    def encode_records(self, records: Sequence[Dict[str, object]], apply_normalization: bool = True) -> torch.Tensor:
+        rows = [self.encode_event(record, apply_normalization=apply_normalization) for record in records]
         if not rows:
             return torch.zeros(0, self.input_dim, dtype=torch.float32)
         return torch.tensor(rows, dtype=torch.float32)
@@ -149,11 +188,51 @@ class MVPEventEncoder:
             raise ValueError(f"Expected top-level JSON list in {path}")
         return data
 
-    def encode_json_file(self, path: Path, label: Optional[int] = None) -> EncodedChart:
+    def encode_json_file(self, path: Path, label: Optional[int] = None, apply_normalization: bool = True) -> EncodedChart:
         records = self.load_records_from_json(path)
-        events = self.encode_records(records)
+        events = self.encode_records(records, apply_normalization=apply_normalization)
         meta = {"path": str(path), "num_events": len(records)}
         return EncodedChart(events=events, length=events.size(0), label=label, meta=meta)
+
+    def fit_normalizer_from_paths(self, paths: Sequence[Path]) -> None:
+        total_count = 0
+        sum_vec = torch.zeros(len(STANDARDIZED_NUMERIC_INDICES), dtype=torch.float64)
+        sumsq_vec = torch.zeros(len(STANDARDIZED_NUMERIC_INDICES), dtype=torch.float64)
+
+        for path in paths:
+            records = self.load_records_from_json(path)
+            raw_events = self.encode_records(records, apply_normalization=False)
+            if raw_events.numel() == 0:
+                continue
+            numeric_block = raw_events[:, NUMERIC_BLOCK_START:NUMERIC_BLOCK_END]
+            selected = numeric_block[:, STANDARDIZED_NUMERIC_INDICES].to(torch.float64)
+            total_count += selected.size(0)
+            sum_vec += selected.sum(dim=0)
+            sumsq_vec += (selected * selected).sum(dim=0)
+
+        if total_count == 0:
+            self.numeric_mean = torch.zeros(len(STANDARDIZED_NUMERIC_INDICES), dtype=torch.float32)
+            self.numeric_std = torch.ones(len(STANDARDIZED_NUMERIC_INDICES), dtype=torch.float32)
+            return
+
+        mean = sum_vec / total_count
+        var = (sumsq_vec / total_count) - mean * mean
+        var = torch.clamp(var, min=1e-8)
+        std = torch.sqrt(var)
+        self.numeric_mean = mean.to(torch.float32)
+        self.numeric_std = std.to(torch.float32)
+
+    def export_normalizer_state(self) -> NumericNormalizerState:
+        if self.numeric_mean is None or self.numeric_std is None:
+            raise ValueError("Normalizer has not been fitted yet.")
+        return NumericNormalizerState(
+            mean=self.numeric_mean.clone(),
+            std=self.numeric_std.clone(),
+        )
+
+    def load_normalizer_state(self, state: NumericNormalizerState) -> None:
+        self.numeric_mean = state.mean.clone().to(torch.float32)
+        self.numeric_std = state.std.clone().to(torch.float32)
 
 
 class EncodedChartDataset(Dataset):
@@ -185,6 +264,37 @@ class EncodedChartDataset(Dataset):
             encoded.meta["path"] = str(path)
             encoded.meta["num_events"] = encoded.length
         return encoded
+
+
+class PreencodedChartDataset(Dataset):
+    """
+    Dataset backed by precomputed `.pt` files.
+
+    Each file is expected to contain:
+      {
+        "events": FloatTensor [T, 84],
+        "length": int,
+        "label": int,
+        "meta": dict
+      }
+    """
+
+    def __init__(self, samples: Sequence[Dict[str, object]]) -> None:
+        self.samples = list(samples)
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, index: int) -> EncodedChart:
+        sample = self.samples[index]
+        path = Path(sample["path"])
+        payload = torch.load(path, map_location="cpu")
+        events = payload["events"].to(torch.float32)
+        length = int(payload["length"])
+        label = payload.get("label")
+        meta = dict(payload.get("meta") or {})
+        meta["path"] = str(path)
+        return EncodedChart(events=events, length=length, label=label, meta=meta)
 
 
 def collate_encoded_charts(batch: Sequence[EncodedChart]) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor], List[Dict[str, object]]]:
