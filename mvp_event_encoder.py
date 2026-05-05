@@ -1,0 +1,255 @@
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+
+import torch
+from torch.utils.data import Dataset
+
+
+EVENT_TYPE_VOCAB = ["tap", "hold", "slide", "touch", "compound"]
+EVENT_TYPE_INDEX = {name: idx for idx, name in enumerate(EVENT_TYPE_VOCAB)}
+
+EVENT_TRAIT_VOCAB = ["none", "b", "x", "bx"]
+EVENT_TRAIT_INDEX = {name: idx for idx, name in enumerate(EVENT_TRAIT_VOCAB)}
+
+SLIDE_SHAPE_GROUP_VOCAB = ["none", "line", "curve", "turn", "special"]
+SLIDE_SHAPE_GROUP_INDEX = {name: idx for idx, name in enumerate(SLIDE_SHAPE_GROUP_VOCAB)}
+
+OUTER_SLOT_VOCAB_SIZE = 9  # 0..8
+INNER_MASK_DIM = 34
+
+EVENT_TYPE_DIM = len(EVENT_TYPE_VOCAB)  # 5
+EVENT_TRAIT_DIM = len(EVENT_TRAIT_VOCAB)  # 4
+SLIDE_SHAPE_GROUP_DIM = len(SLIDE_SHAPE_GROUP_VOCAB)  # 5
+OUTER_IDX_DIM = OUTER_SLOT_VOCAB_SIZE * 2  # 18
+NUMERIC_DIM = 18
+INPUT_DIM = EVENT_TYPE_DIM + EVENT_TRAIT_DIM + SLIDE_SHAPE_GROUP_DIM + OUTER_IDX_DIM + NUMERIC_DIM + INNER_MASK_DIM
+
+
+def one_hot(index: int, size: int) -> List[float]:
+    vec = [0.0] * size
+    if 0 <= index < size:
+        vec[index] = 1.0
+    return vec
+
+
+def require_list(value, name: str, expected_len: int) -> Sequence[float]:
+    if not isinstance(value, list) or len(value) != expected_len:
+        raise ValueError(f"Expected `{name}` to be a list of length {expected_len}, got {value!r}")
+    return value
+
+
+def normalize_numeric(value) -> float:
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    raise ValueError(f"Expected numeric value, got {value!r}")
+
+
+@dataclass
+class EncodedChart:
+    events: torch.Tensor  # [T, 84]
+    length: int
+    label: Optional[int] = None
+    meta: Optional[Dict[str, object]] = None
+
+
+class MVPEventEncoder:
+    """
+    Encodes one parsed event record into the fixed 84-dim input vector for the MVP MLP.
+    """
+
+    input_dim: int = INPUT_DIM
+
+    def encode_event(self, record: Dict[str, object]) -> List[float]:
+        event_type = str(record["event_type"])
+        event_trait = str(record["event_trait"])
+        slide_shape_group = str(record["slide_shape_group"])
+
+        if event_type not in EVENT_TYPE_INDEX:
+            raise KeyError(f"Unknown event_type: {event_type}")
+        if event_trait not in EVENT_TRAIT_INDEX:
+            raise KeyError(f"Unknown event_trait: {event_trait}")
+        if slide_shape_group not in SLIDE_SHAPE_GROUP_INDEX:
+            raise KeyError(f"Unknown slide_shape_group: {slide_shape_group}")
+
+        outer_idx = require_list(record["outer_idx"], "outer_idx", 2)
+        outer_pos_sin = require_list(record["outer_pos_sin"], "outer_pos_sin", 2)
+        outer_pos_cos = require_list(record["outer_pos_cos"], "outer_pos_cos", 2)
+        inner_mask = require_list(record["inner_mask"], "inner_mask", INNER_MASK_DIM)
+
+        vector: List[float] = []
+
+        # 1. one-hot blocks
+        vector.extend(one_hot(EVENT_TYPE_INDEX[event_type], EVENT_TYPE_DIM))
+        vector.extend(one_hot(EVENT_TRAIT_INDEX[event_trait], EVENT_TRAIT_DIM))
+        vector.extend(one_hot(SLIDE_SHAPE_GROUP_INDEX[slide_shape_group], SLIDE_SHAPE_GROUP_DIM))
+        vector.extend(one_hot(int(outer_idx[0]), OUTER_SLOT_VOCAB_SIZE))
+        vector.extend(one_hot(int(outer_idx[1]), OUTER_SLOT_VOCAB_SIZE))
+
+        # 2. numeric block (18 dims, fixed order)
+        numeric_fields = [
+            "delta_time",
+            "outer_active",
+            None,  # outer_pos_sin[0]
+            None,  # outer_pos_cos[0]
+            None,  # outer_pos_sin[1]
+            None,  # outer_pos_cos[1]
+            "inner_count",
+            "cross_zone_flag",
+            "outer_move_dist",
+            "inner_add_count",
+            "inner_remove_count",
+            "hold_active",
+            "hold_remaining_time",
+            "slide_active",
+            "slide_remaining_time",
+            "slide_span",
+            "slide_conflict_flag",
+            "local_density_500ms",
+        ]
+
+        vector.append(normalize_numeric(record["delta_time"]))
+        vector.append(normalize_numeric(record["outer_active"]))
+        vector.append(normalize_numeric(outer_pos_sin[0]))
+        vector.append(normalize_numeric(outer_pos_cos[0]))
+        vector.append(normalize_numeric(outer_pos_sin[1]))
+        vector.append(normalize_numeric(outer_pos_cos[1]))
+        vector.append(normalize_numeric(record["inner_count"]))
+        vector.append(normalize_numeric(record["cross_zone_flag"]))
+        vector.append(normalize_numeric(record["outer_move_dist"]))
+        vector.append(normalize_numeric(record["inner_add_count"]))
+        vector.append(normalize_numeric(record["inner_remove_count"]))
+        vector.append(normalize_numeric(record["hold_active"]))
+        vector.append(normalize_numeric(record["hold_remaining_time"]))
+        vector.append(normalize_numeric(record["slide_active"]))
+        vector.append(normalize_numeric(record["slide_remaining_time"]))
+        vector.append(normalize_numeric(record["slide_span"]))
+        vector.append(normalize_numeric(record["slide_conflict_flag"]))
+        vector.append(normalize_numeric(record["local_density_500ms"]))
+
+        # 3. inner multi-hot block
+        vector.extend(normalize_numeric(x) for x in inner_mask)
+
+        if len(vector) != self.input_dim:
+            raise ValueError(f"Encoded event dim mismatch: expected {self.input_dim}, got {len(vector)}")
+        return vector
+
+    def encode_records(self, records: Sequence[Dict[str, object]]) -> torch.Tensor:
+        rows = [self.encode_event(record) for record in records]
+        if not rows:
+            return torch.zeros(0, self.input_dim, dtype=torch.float32)
+        return torch.tensor(rows, dtype=torch.float32)
+
+    def load_records_from_json(self, path: Path) -> List[Dict[str, object]]:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, list):
+            raise ValueError(f"Expected top-level JSON list in {path}")
+        return data
+
+    def encode_json_file(self, path: Path, label: Optional[int] = None) -> EncodedChart:
+        records = self.load_records_from_json(path)
+        events = self.encode_records(records)
+        meta = {"path": str(path), "num_events": len(records)}
+        return EncodedChart(events=events, length=events.size(0), label=label, meta=meta)
+
+
+class EncodedChartDataset(Dataset):
+    """
+    Minimal dataset wrapper around already-parsed event JSON files.
+
+    Each sample is:
+        {
+            "path": Path to event-json file,
+            "label": optional class index,
+            "meta": optional free-form metadata
+        }
+    """
+
+    def __init__(self, samples: Sequence[Dict[str, object]], encoder: Optional[MVPEventEncoder] = None) -> None:
+        self.samples = list(samples)
+        self.encoder = encoder or MVPEventEncoder()
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, index: int) -> EncodedChart:
+        sample = self.samples[index]
+        path = Path(sample["path"])
+        label = sample.get("label")
+        encoded = self.encoder.encode_json_file(path, label=label)
+        if sample.get("meta") is not None:
+            encoded.meta = dict(sample["meta"])
+            encoded.meta["path"] = str(path)
+            encoded.meta["num_events"] = encoded.length
+        return encoded
+
+
+def collate_encoded_charts(batch: Sequence[EncodedChart]) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor], List[Dict[str, object]]]:
+    if not batch:
+        raise ValueError("Batch is empty")
+
+    batch_size = len(batch)
+    max_len = max(item.length for item in batch)
+    feature_dim = batch[0].events.size(-1) if batch[0].length > 0 else INPUT_DIM
+
+    padded = torch.zeros(batch_size, max_len, feature_dim, dtype=torch.float32)
+    lengths = torch.zeros(batch_size, dtype=torch.long)
+    labels: List[int] = []
+    metas: List[Dict[str, object]] = []
+    has_all_labels = True
+
+    for i, item in enumerate(batch):
+        lengths[i] = item.length
+        if item.length > 0:
+            padded[i, :item.length] = item.events
+        if item.label is None:
+            has_all_labels = False
+        else:
+            labels.append(int(item.label))
+        metas.append(item.meta or {})
+
+    label_tensor = torch.tensor(labels, dtype=torch.long) if has_all_labels else None
+    return padded, lengths, label_tensor, metas
+
+
+def smoke_test(json_path: Optional[str] = None) -> None:
+    encoder = MVPEventEncoder()
+    if json_path is None:
+        fake_record = {
+            "event_type": "tap",
+            "event_trait": "b",
+            "slide_shape_group": "none",
+            "outer_idx": [1, 8],
+            "outer_pos_sin": [0.707107, -0.0],
+            "outer_pos_cos": [0.707107, 1.0],
+            "inner_mask": [0] * INNER_MASK_DIM,
+            "delta_time": 0.1,
+            "outer_active": 1,
+            "inner_count": 0,
+            "cross_zone_flag": 0,
+            "outer_move_dist": 0.25,
+            "inner_add_count": 0,
+            "inner_remove_count": 0,
+            "hold_active": 0,
+            "hold_remaining_time": 0.0,
+            "slide_active": 0,
+            "slide_remaining_time": 0.0,
+            "slide_span": 0.0,
+            "slide_conflict_flag": 0,
+            "local_density_500ms": 0.69,
+        }
+        x = encoder.encode_records([fake_record])
+        print("encoded_shape:", tuple(x.shape))
+        print("feature_dim:", x.size(-1))
+        return
+
+    chart = encoder.encode_json_file(Path(json_path))
+    print("events_shape:", tuple(chart.events.shape))
+    print("num_events:", chart.length)
+
+
+if __name__ == "__main__":
+    smoke_test()
