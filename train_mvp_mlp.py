@@ -229,7 +229,7 @@ def run_epoch(
         if labels is None:
             raise ValueError("Labels are required for training/evaluation.")
 
-        batch_x = project_feature_tensor(batch_x, config.input_dim)
+        batch_x = project_feature_tensor(batch_x, model.config.input_dim)
         batch_x = batch_x.to(device)
         lengths = lengths.to(device)
         labels = labels.to(device)

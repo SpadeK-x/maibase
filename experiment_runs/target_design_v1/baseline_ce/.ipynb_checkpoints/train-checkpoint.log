@@ -1,0 +1,18 @@
+all total=1212 13=539 13+=386 14=209 14+=78
+train total=969 13=427 13+=306 14=169 14+=67
+eval total=121 13=56 13+=38 14=21 14+=6
+test total=122 13=56 13+=42 14=19 14+=5
+class_weight [0.5673301815986633, 0.7916666865348816, 1.4334319829940796, 3.6156716346740723]
+Traceback (most recent call last):
+  File "/root/autodl-tmp/train_mvp_mlp.py", line 586, in <module>
+    main()
+  File "/root/autodl-tmp/train_mvp_mlp.py", line 557, in main
+    model = train_model(
+            ^^^^^^^^^^^^
+  File "/root/autodl-tmp/train_mvp_mlp.py", line 282, in train_model
+    train_loss, train_acc = run_epoch(
+                            ^^^^^^^^^^
+  File "/root/autodl-tmp/train_mvp_mlp.py", line 232, in run_epoch
+    batch_x = project_feature_tensor(batch_x, config.input_dim)
+                                              ^^^^^^
+NameError: name 'config' is not defined

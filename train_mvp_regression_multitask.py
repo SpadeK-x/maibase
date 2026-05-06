@@ -187,6 +187,7 @@ class MVPRegressionMultiTaskModel(nn.Module):
     def __init__(self, input_dim: int, pooling: str = "mean_max", num_classes: int = 4) -> None:
         super().__init__()
         config = MLPConfig(input_dim=input_dim, pooling=pooling, num_classes=num_classes)
+        self.config = config
         self.event_encoder = EventMLPEncoder(config)
         self.pooler = EventPooler(config.pooling)
         pooled_dim = config.event_embed_dim * (2 if pooling == "mean_max" else 1)
@@ -229,7 +230,7 @@ def run_epoch(
     steps = 0
 
     for batch_x, lengths, reg_targets, cls_targets, _ in loader:
-        batch_x = project_feature_tensor(batch_x, model.event_encoder.config.input_dim)
+        batch_x = project_feature_tensor(batch_x, model.config.input_dim)
         batch_x = batch_x.to(device)
         lengths = lengths.to(device)
         reg_targets = reg_targets.to(device)
@@ -272,7 +273,7 @@ def collect_predictions(
 
     with torch.no_grad():
         for batch_x, lengths, reg_targets, cls_targets, metas in loader:
-            batch_x = project_feature_tensor(batch_x, model.event_encoder.config.input_dim)
+            batch_x = project_feature_tensor(batch_x, model.config.input_dim)
             batch_x = batch_x.to(device)
             lengths = lengths.to(device)
             mask = make_padding_mask(lengths, batch_x.size(1))

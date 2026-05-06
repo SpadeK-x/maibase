@@ -1,0 +1,40 @@
+all total=1212 13=539 13+=386 14=209 14+=78
+train total=969 13=427 13+=306 14=169 14+=67
+eval total=121 13=56 13+=38 14=21 14+=6
+test total=122 13=56 13+=42 14=19 14+=5
+target_mean=13.6896 target_std=0.4823
+model_input_dim 84
+best_eval_thresholds {'t1': 13.54, 't2': 13.98, 't3': 14.36, 'eval_accuracy': 0.7355}
+eval_confusion
+confusion_matrix
+tensor([[45, 10,  1,  0],
+        [10, 26,  2,  0],
+        [ 1,  6, 14,  0],
+        [ 0,  0,  2,  4]])
+per_class_recall
+13: recall=0.8036 (45/56)
+13+: recall=0.6842 (26/38)
+14: recall=0.6667 (14/21)
+14+: recall=0.6667 (4/6)
+per_class_precision
+13: precision=0.8036 (45/56)
+13+: precision=0.6190 (26/42)
+14: precision=0.7368 (14/19)
+14+: precision=1.0000 (4/4)
+test_confusion
+confusion_matrix
+tensor([[50,  6,  0,  0],
+        [11, 29,  2,  0],
+        [ 0,  8, 10,  1],
+        [ 0,  0,  2,  3]])
+per_class_recall
+13: recall=0.8929 (50/56)
+13+: recall=0.6905 (29/42)
+14: recall=0.5263 (10/19)
+14+: recall=0.6000 (3/5)
+per_class_precision
+13: precision=0.8197 (50/61)
+13+: precision=0.6744 (29/43)
+14: precision=0.7143 (10/14)
+14+: precision=0.7500 (3/4)
+export_test_csv=experiment_runs/target_design_v1/regression/regression_thresholded_test.csv

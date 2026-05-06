@@ -1,0 +1,29 @@
+[baseline_ce]
+50 5 1 0
+12 19 11 0
+0 1 14 4
+0 0 1 4
+
+[regression_official_thresholds]
+50 6 0 0
+12 28 2 0
+0 8 11 0
+0 0 3 2
+
+[regression_searched_thresholds]
+50 6 0 0
+11 29 2 0
+0 8 10 1
+0 0 2 3
+
+[multitask_cls_head]
+53 3 0 0
+16 23 3 0
+1 8 9 1
+0 0 3 2
+
+[multitask_regression_bucket]
+51 5 0 0
+13 27 2 0
+0 9 10 0
+0 0 3 2

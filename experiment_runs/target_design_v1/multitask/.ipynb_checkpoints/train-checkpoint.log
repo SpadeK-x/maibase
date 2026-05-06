@@ -1,0 +1,13 @@
+target_mean=13.6896 target_std=0.4823
+Traceback (most recent call last):
+  File "/root/autodl-tmp/train_mvp_regression_multitask.py", line 520, in <module>
+    main()
+  File "/root/autodl-tmp/train_mvp_regression_multitask.py", line 441, in main
+    train_loss, train_reg_mae, train_cls_acc = run_epoch(
+                                               ^^^^^^^^^^
+  File "/root/autodl-tmp/train_mvp_regression_multitask.py", line 232, in run_epoch
+    batch_x = project_feature_tensor(batch_x, model.event_encoder.config.input_dim)
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1709, in __getattr__
+    raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+AttributeError: 'EventMLPEncoder' object has no attribute 'config'
