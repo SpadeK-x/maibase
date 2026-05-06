@@ -1,1 +1,0 @@
-python ./train_mvp_regression.py --encoded-dir ./encoded_all --labels-csv ./labels.csv --epochs 100 --batch-size 256 --eval-batch-size 32 --lr 5e-4 --pooling mean_max --num-workers 20 --predictions-output ./regression_predictions_test.csv
