@@ -10,7 +10,13 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset, random_split
 
-from mvp_event_encoder import EncodedChartDataset, MVPEventEncoder, PreencodedChartDataset, collate_encoded_charts
+from mvp_event_encoder import (
+    EncodedChartDataset,
+    MVPEventEncoder,
+    PreencodedChartDataset,
+    collate_encoded_charts,
+    project_feature_tensor,
+)
 from mvp_mlp_model import EventMLPEncoder, EventPooler, MLPConfig, make_padding_mask
 from train_mvp_mlp import DEFAULT_LABEL_CLASSES, print_confusion_and_metrics
 
@@ -223,6 +229,7 @@ def run_epoch(
     steps = 0
 
     for batch_x, lengths, reg_targets, cls_targets, _ in loader:
+        batch_x = project_feature_tensor(batch_x, model.event_encoder.config.input_dim)
         batch_x = batch_x.to(device)
         lengths = lengths.to(device)
         reg_targets = reg_targets.to(device)
@@ -265,6 +272,7 @@ def collect_predictions(
 
     with torch.no_grad():
         for batch_x, lengths, reg_targets, cls_targets, metas in loader:
+            batch_x = project_feature_tensor(batch_x, model.event_encoder.config.input_dim)
             batch_x = batch_x.to(device)
             lengths = lengths.to(device)
             mask = make_padding_mask(lengths, batch_x.size(1))

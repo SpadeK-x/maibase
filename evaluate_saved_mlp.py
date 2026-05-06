@@ -8,10 +8,11 @@ from torch.utils.data import DataLoader, random_split
 from mvp_event_encoder import (
     EncodedChartDataset,
     MVPEventEncoder,
-    NUMERIC_BLOCK_START,
     PreencodedChartDataset,
+    apply_zero_feature_mask,
     collate_encoded_charts,
     get_numeric_feature_indices,
+    project_feature_tensor,
 )
 from mvp_mlp_model import build_model, make_padding_mask
 from train_mvp_mlp import (
@@ -44,32 +45,7 @@ def infer_input_dim_from_state_dict(state_dict: Dict[str, torch.Tensor]) -> int:
 
 
 def project_features_for_model(batch_x: torch.Tensor, target_input_dim: int) -> torch.Tensor:
-    source_dim = int(batch_x.size(-1))
-    if source_dim == target_input_dim:
-        return batch_x
-
-    cat_end = NUMERIC_BLOCK_START
-    if source_dim == 89 and target_input_dim == 84:
-        numeric = batch_x[:, :, cat_end:cat_end + 18]
-        inner = batch_x[:, :, -34:]
-        return torch.cat([batch_x[:, :, :cat_end], numeric, inner], dim=-1)
-
-    if source_dim == 89 and target_input_dim == 86:
-        numeric_base = batch_x[:, :, cat_end:cat_end + 18]
-        slide_conflict_load = batch_x[:, :, cat_end + 20:cat_end + 21]
-        hand_span_pressure = batch_x[:, :, cat_end + 21:cat_end + 22]
-        inner = batch_x[:, :, -34:]
-        return torch.cat(
-            [batch_x[:, :, :cat_end], numeric_base, slide_conflict_load, hand_span_pressure, inner],
-            dim=-1,
-        )
-
-    if source_dim == 86 and target_input_dim == 84:
-        numeric = batch_x[:, :, cat_end:cat_end + 18]
-        inner = batch_x[:, :, -34:]
-        return torch.cat([batch_x[:, :, :cat_end], numeric, inner], dim=-1)
-
-    raise ValueError(f"Unsupported feature projection: source_dim={source_dim} target_input_dim={target_input_dim}")
+    return project_feature_tensor(batch_x, target_input_dim)
 
 
 def export_pair_subsets(rows: Sequence[Dict[str, str]], output_dir: Path) -> None:
@@ -196,8 +172,7 @@ def main() -> None:
             batch_x = batch_x.to(config.device, non_blocking=True)
             lengths = lengths.to(config.device, non_blocking=True)
             labels = labels.to(config.device, non_blocking=True)
-            if zero_feature_indices is not None and zero_feature_indices.numel() > 0:
-                batch_x[:, :, zero_feature_indices] = 0.0
+            batch_x = apply_zero_feature_mask(batch_x, zero_feature_indices)
             logits, _, _ = model(batch_x, make_padding_mask(lengths, batch_x.size(1)))
             all_preds.append(logits.argmax(dim=-1).cpu())
             all_labels.append(labels.cpu())

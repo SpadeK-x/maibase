@@ -23,7 +23,9 @@ EVENT_TYPE_DIM = len(EVENT_TYPE_VOCAB)  # 5
 EVENT_TRAIT_DIM = len(EVENT_TRAIT_VOCAB)  # 4
 SLIDE_SHAPE_GROUP_DIM = len(SLIDE_SHAPE_GROUP_VOCAB)  # 5
 OUTER_IDX_DIM = OUTER_SLOT_VOCAB_SIZE * 2  # 18
-NUMERIC_DIM = 20
+MAINLINE_NUMERIC_DIM = 18
+LEGACY_EXTRA_NUMERIC_FIELDS = ["slide_conflict_load", "hand_span_pressure"]
+NUMERIC_DIM = MAINLINE_NUMERIC_DIM
 INPUT_DIM = EVENT_TYPE_DIM + EVENT_TRAIT_DIM + SLIDE_SHAPE_GROUP_DIM + OUTER_IDX_DIM + NUMERIC_DIM + INNER_MASK_DIM
 
 NUMERIC_BLOCK_START = EVENT_TYPE_DIM + EVENT_TRAIT_DIM + SLIDE_SHAPE_GROUP_DIM + OUTER_IDX_DIM
@@ -48,9 +50,8 @@ NUMERIC_FIELD_ORDER = [
     "slide_span",
     "slide_conflict_flag",
     "local_density_500ms",
-    "slide_conflict_load",
-    "hand_span_pressure",
 ]
+ALL_NUMERIC_FIELD_ORDER = NUMERIC_FIELD_ORDER + LEGACY_EXTRA_NUMERIC_FIELDS
 
 STANDARDIZED_NUMERIC_FIELDS = [
     "delta_time",
@@ -62,8 +63,6 @@ STANDARDIZED_NUMERIC_FIELDS = [
     "slide_remaining_time",
     "slide_span",
     "local_density_500ms",
-    "slide_conflict_load",
-    "hand_span_pressure",
 ]
 STANDARDIZED_NUMERIC_INDICES = [NUMERIC_FIELD_ORDER.index(name) for name in STANDARDIZED_NUMERIC_FIELDS]
 
@@ -92,10 +91,49 @@ def normalize_numeric(value) -> float:
 def get_numeric_feature_indices(field_names: Sequence[str]) -> List[int]:
     indices: List[int] = []
     for name in field_names:
-        if name not in NUMERIC_FIELD_ORDER:
+        if name not in ALL_NUMERIC_FIELD_ORDER:
             raise KeyError(f"Unknown numeric field: {name}")
-        indices.append(NUMERIC_BLOCK_START + NUMERIC_FIELD_ORDER.index(name))
+        indices.append(NUMERIC_BLOCK_START + ALL_NUMERIC_FIELD_ORDER.index(name))
     return indices
+
+
+def project_feature_tensor(batch_x: torch.Tensor, target_input_dim: int) -> torch.Tensor:
+    source_dim = int(batch_x.size(-1))
+    if source_dim == target_input_dim:
+        return batch_x
+
+    cat_end = NUMERIC_BLOCK_START
+    if source_dim == 89 and target_input_dim == 84:
+        numeric = batch_x[:, :, cat_end:cat_end + 18]
+        inner = batch_x[:, :, -34:]
+        return torch.cat([batch_x[:, :, :cat_end], numeric, inner], dim=-1)
+
+    if source_dim == 89 and target_input_dim == 86:
+        numeric_base = batch_x[:, :, cat_end:cat_end + 18]
+        slide_conflict_load = batch_x[:, :, cat_end + 20:cat_end + 21]
+        hand_span_pressure = batch_x[:, :, cat_end + 21:cat_end + 22]
+        inner = batch_x[:, :, -34:]
+        return torch.cat(
+            [batch_x[:, :, :cat_end], numeric_base, slide_conflict_load, hand_span_pressure, inner],
+            dim=-1,
+        )
+
+    if source_dim == 86 and target_input_dim == 84:
+        numeric = batch_x[:, :, cat_end:cat_end + 18]
+        inner = batch_x[:, :, -34:]
+        return torch.cat([batch_x[:, :, :cat_end], numeric, inner], dim=-1)
+
+    raise ValueError(f"Unsupported feature projection: source_dim={source_dim} target_input_dim={target_input_dim}")
+
+
+def apply_zero_feature_mask(batch_x: torch.Tensor, zero_feature_indices: Optional[torch.Tensor]) -> torch.Tensor:
+    if zero_feature_indices is None or zero_feature_indices.numel() == 0:
+        return batch_x
+    active_indices = zero_feature_indices[zero_feature_indices < batch_x.size(-1)]
+    if active_indices.numel() == 0:
+        return batch_x
+    batch_x[:, :, active_indices] = 0.0
+    return batch_x
 
 
 @dataclass
@@ -149,7 +187,7 @@ class MVPEventEncoder:
         vector.extend(one_hot(int(outer_idx[0]), OUTER_SLOT_VOCAB_SIZE))
         vector.extend(one_hot(int(outer_idx[1]), OUTER_SLOT_VOCAB_SIZE))
 
-        # 2. numeric block (20 dims, fixed order)
+        # 2. numeric block (18 dims, strict 21-field mainline order)
         vector.append(normalize_numeric(record["delta_time"]))
         vector.append(normalize_numeric(record["outer_active"]))
         vector.append(normalize_numeric(outer_pos_sin[0]))
@@ -168,8 +206,6 @@ class MVPEventEncoder:
         vector.append(normalize_numeric(record["slide_span"]))
         vector.append(normalize_numeric(record["slide_conflict_flag"]))
         vector.append(normalize_numeric(record["local_density_500ms"]))
-        vector.append(normalize_numeric(record.get("slide_conflict_load", 0.0)))
-        vector.append(normalize_numeric(record.get("hand_span_pressure", 0.0)))
 
         # 3. inner multi-hot block
         vector.extend(normalize_numeric(x) for x in inner_mask)

@@ -1,1 +1,0 @@
-python ./search_regression_thresholds.py --encoded-dir ./encoded_all --labels-csv ./labels.csv --model-path ./mvp_regression.pth --pooling mean_max --num-workers 20 --threshold-step 0.02 --export-test-csv ./regression_thresholded_test.csv

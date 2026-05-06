@@ -90,6 +90,7 @@ def collect_regression_outputs(
     device: str,
     target_mean: float,
     target_std: float,
+    input_dim: int,
 ) -> Tuple[torch.Tensor, torch.Tensor, List[Dict[str, object]]]:
     model.eval()
     all_preds: List[torch.Tensor] = []
@@ -98,6 +99,7 @@ def collect_regression_outputs(
 
     with torch.no_grad():
         for batch_x, lengths, targets, metas in loader:
+            batch_x = project_features_for_model(batch_x, input_dim)
             batch_x = batch_x.to(device, non_blocking=True)
             lengths = lengths.to(device, non_blocking=True)
             mask = make_padding_mask(lengths, batch_x.size(1))
@@ -282,6 +284,7 @@ def main() -> None:
         config.device,
         target_mean=target_mean,
         target_std=target_std,
+        input_dim=input_dim,
     )
     test_preds, test_targets, test_metas = collect_regression_outputs(
         model,
@@ -289,6 +292,7 @@ def main() -> None:
         config.device,
         target_mean=target_mean,
         target_std=target_std,
+        input_dim=input_dim,
     )
 
     if args.use_linear_calibration:

@@ -13,8 +13,10 @@ from mvp_event_encoder import (
     EncodedChartDataset,
     MVPEventEncoder,
     PreencodedChartDataset,
+    apply_zero_feature_mask,
     collate_encoded_charts,
     get_numeric_feature_indices,
+    project_feature_tensor,
 )
 from mvp_mlp_model import build_model, make_padding_mask
 
@@ -227,11 +229,11 @@ def run_epoch(
         if labels is None:
             raise ValueError("Labels are required for training/evaluation.")
 
+        batch_x = project_feature_tensor(batch_x, config.input_dim)
         batch_x = batch_x.to(device)
         lengths = lengths.to(device)
         labels = labels.to(device)
-        if zero_feature_indices is not None and zero_feature_indices.numel() > 0:
-            batch_x[:, :, zero_feature_indices] = 0.0
+        batch_x = apply_zero_feature_mask(batch_x, zero_feature_indices)
         mask = make_padding_mask(lengths, batch_x.size(1))
 
         logits, _, _ = model(batch_x, mask)
@@ -337,11 +339,11 @@ def collect_predictions(
             if labels is None:
                 continue
 
+            batch_x = project_feature_tensor(batch_x, model.config.input_dim)
             batch_x = batch_x.to(device, non_blocking=True)
             lengths = lengths.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
-            if zero_feature_indices is not None and zero_feature_indices.numel() > 0:
-                batch_x[:, :, zero_feature_indices] = 0.0
+            batch_x = apply_zero_feature_mask(batch_x, zero_feature_indices)
             mask = make_padding_mask(lengths, batch_x.size(1))
 
             logits, _, _ = model(batch_x, mask)

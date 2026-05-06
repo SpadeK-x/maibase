@@ -6,8 +6,15 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
 
-from mvp_event_encoder import EncodedChartDataset, MVPEventEncoder, PreencodedChartDataset, collate_encoded_charts
-from mvp_event_encoder import get_numeric_feature_indices
+from mvp_event_encoder import (
+    EncodedChartDataset,
+    MVPEventEncoder,
+    PreencodedChartDataset,
+    apply_zero_feature_mask,
+    collate_encoded_charts,
+    get_numeric_feature_indices,
+    project_feature_tensor,
+)
 from mvp_mlp_model import make_padding_mask
 from mvp_transformer_model import build_transformer_model
 from train_mvp_mlp import (
@@ -48,11 +55,11 @@ def run_epoch(
         if labels is None:
             raise ValueError("Labels are required for training/evaluation.")
 
+        batch_x = project_feature_tensor(batch_x, model.config.input_dim)
         batch_x = batch_x.to(device, non_blocking=True)
         lengths = lengths.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
-        if zero_feature_indices is not None and zero_feature_indices.numel() > 0:
-            batch_x[:, :, zero_feature_indices] = 0.0
+        batch_x = apply_zero_feature_mask(batch_x, zero_feature_indices)
         mask = make_padding_mask(lengths, batch_x.size(1))
 
         logits, _, _ = model(batch_x, mask)
