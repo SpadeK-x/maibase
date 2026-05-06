@@ -16,7 +16,8 @@ from mvp_event_encoder import (
     project_feature_tensor,
 )
 from mvp_mlp_model import EventMLPEncoder, EventPooler, MLPConfig, make_padding_mask
-from probe_structural_signals import compute_probe_metrics, load_records
+from probe_structural_signals import compute_probe_metrics as compute_structural_probe_metrics, load_records
+from probe_technical_signals import compute_technical_probe_metrics
 from train_mvp_mlp import (
     DEFAULT_LABEL_CLASSES,
     build_prediction_rows,
@@ -52,6 +53,35 @@ PROBE_PRESETS = {
         "slide_conflict_when_busy_ratio",
         "busy_outer_move_mean",
         "busy_outer_move_p90",
+    ],
+    "technical_v1": [
+        "interval_cv",
+        "interval_entropy",
+        "rhythm_switch_ratio",
+        "short_long_alternation_ratio",
+        "low_density_rhythm_switch_ratio",
+        "nonburst_rhythm_switch_ratio",
+        "slide_density_mean",
+        "slide_density_p90",
+        "slide_outer_move_p90",
+        "slide_compound_ratio",
+        "slide_span_p90",
+        "long_slide_ratio",
+        "slide_conflict_active_ratio",
+    ],
+    "hybrid_v1": [
+        "busy_density_mean",
+        "busy_density_p90",
+        "outer_move_ge_0_25_ratio",
+        "span_jump_p90",
+        "slide_conflict_when_busy_ratio",
+        "busy_outer_move_p90",
+        "rhythm_switch_ratio",
+        "low_density_rhythm_switch_ratio",
+        "slide_density_p90",
+        "slide_outer_move_p90",
+        "slide_span_p90",
+        "slide_conflict_active_ratio",
     ],
 }
 
@@ -233,7 +263,9 @@ def build_probe_rows(
         chart = str((sample.get("meta") or {}).get("chart", ""))
         if not chart:
             chart = Path(str(sample["path"])).stem
-        metrics = compute_probe_metrics(load_records(probe_events_dir, chart))
+        records = load_records(probe_events_dir, chart)
+        metrics = compute_structural_probe_metrics(records)
+        metrics.update(compute_technical_probe_metrics(records))
         rows.append([float(metrics[name]) for name in probe_feature_names])
     return rows
 
