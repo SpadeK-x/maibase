@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd .
+echo '==> v1_full_ce'
+python train_mvp_mlp_late_fusion.py --encoded-dir encoded_all --probe-events-dir events_all --labels-csv labels.csv --epochs 100 --batch-size 256 --eval-batch-size 32 --lr 0.0005 --pooling mean_max --seed 42 --num-workers 2 --loss-type ce --probe-preset v1 --save-model E:/maibase/experiment_runs/late_fusion_ablation_round/v1_full_ce/model.pth --predictions-output E:/maibase/experiment_runs/late_fusion_ablation_round/v1_full_ce/predictions_test.csv --misclassified-output E:/maibase/experiment_runs/late_fusion_ablation_round/v1_full_ce/misclassified_test.csv 2>&1 | tee E:/maibase/experiment_runs/late_fusion_ablation_round/v1_full_ce/train.log
+
+cd .
+echo '==> v1_drop_busy_density_mean_ce'
+python train_mvp_mlp_late_fusion.py --encoded-dir encoded_all --probe-events-dir events_all --labels-csv labels.csv --epochs 100 --batch-size 256 --eval-batch-size 32 --lr 0.0005 --pooling mean_max --seed 42 --num-workers 2 --loss-type ce --probe-features busy_density_p90 outer_move_ge_0_25_ratio span_jump_p90 slide_conflict_when_busy_ratio busy_outer_move_p90 --save-model E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_busy_density_mean_ce/model.pth --predictions-output E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_busy_density_mean_ce/predictions_test.csv --misclassified-output E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_busy_density_mean_ce/misclassified_test.csv 2>&1 | tee E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_busy_density_mean_ce/train.log
+
+cd .
+echo '==> v1_drop_busy_density_p90_ce'
+python train_mvp_mlp_late_fusion.py --encoded-dir encoded_all --probe-events-dir events_all --labels-csv labels.csv --epochs 100 --batch-size 256 --eval-batch-size 32 --lr 0.0005 --pooling mean_max --seed 42 --num-workers 2 --loss-type ce --probe-features busy_density_mean outer_move_ge_0_25_ratio span_jump_p90 slide_conflict_when_busy_ratio busy_outer_move_p90 --save-model E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_busy_density_p90_ce/model.pth --predictions-output E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_busy_density_p90_ce/predictions_test.csv --misclassified-output E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_busy_density_p90_ce/misclassified_test.csv 2>&1 | tee E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_busy_density_p90_ce/train.log
+
+cd .
+echo '==> v1_drop_outer_move_ge_0_25_ratio_ce'
+python train_mvp_mlp_late_fusion.py --encoded-dir encoded_all --probe-events-dir events_all --labels-csv labels.csv --epochs 100 --batch-size 256 --eval-batch-size 32 --lr 0.0005 --pooling mean_max --seed 42 --num-workers 2 --loss-type ce --probe-features busy_density_mean busy_density_p90 span_jump_p90 slide_conflict_when_busy_ratio busy_outer_move_p90 --save-model E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_outer_move_ge_0_25_ratio_ce/model.pth --predictions-output E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_outer_move_ge_0_25_ratio_ce/predictions_test.csv --misclassified-output E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_outer_move_ge_0_25_ratio_ce/misclassified_test.csv 2>&1 | tee E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_outer_move_ge_0_25_ratio_ce/train.log
+
+cd .
+echo '==> v1_drop_span_jump_p90_ce'
+python train_mvp_mlp_late_fusion.py --encoded-dir encoded_all --probe-events-dir events_all --labels-csv labels.csv --epochs 100 --batch-size 256 --eval-batch-size 32 --lr 0.0005 --pooling mean_max --seed 42 --num-workers 2 --loss-type ce --probe-features busy_density_mean busy_density_p90 outer_move_ge_0_25_ratio slide_conflict_when_busy_ratio busy_outer_move_p90 --save-model E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_span_jump_p90_ce/model.pth --predictions-output E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_span_jump_p90_ce/predictions_test.csv --misclassified-output E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_span_jump_p90_ce/misclassified_test.csv 2>&1 | tee E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_span_jump_p90_ce/train.log
+
+cd .
+echo '==> v1_drop_slide_conflict_when_busy_ratio_ce'
+python train_mvp_mlp_late_fusion.py --encoded-dir encoded_all --probe-events-dir events_all --labels-csv labels.csv --epochs 100 --batch-size 256 --eval-batch-size 32 --lr 0.0005 --pooling mean_max --seed 42 --num-workers 2 --loss-type ce --probe-features busy_density_mean busy_density_p90 outer_move_ge_0_25_ratio span_jump_p90 busy_outer_move_p90 --save-model E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_slide_conflict_when_busy_ratio_ce/model.pth --predictions-output E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_slide_conflict_when_busy_ratio_ce/predictions_test.csv --misclassified-output E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_slide_conflict_when_busy_ratio_ce/misclassified_test.csv 2>&1 | tee E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_slide_conflict_when_busy_ratio_ce/train.log
+
+cd .
+echo '==> v1_drop_busy_outer_move_p90_ce'
+python train_mvp_mlp_late_fusion.py --encoded-dir encoded_all --probe-events-dir events_all --labels-csv labels.csv --epochs 100 --batch-size 256 --eval-batch-size 32 --lr 0.0005 --pooling mean_max --seed 42 --num-workers 2 --loss-type ce --probe-features busy_density_mean busy_density_p90 outer_move_ge_0_25_ratio span_jump_p90 slide_conflict_when_busy_ratio --save-model E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_busy_outer_move_p90_ce/model.pth --predictions-output E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_busy_outer_move_p90_ce/predictions_test.csv --misclassified-output E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_busy_outer_move_p90_ce/misclassified_test.csv 2>&1 | tee E:/maibase/experiment_runs/late_fusion_ablation_round/v1_drop_busy_outer_move_p90_ce/train.log

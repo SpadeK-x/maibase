@@ -69,6 +69,13 @@ PROBE_PRESETS = {
         "long_slide_ratio",
         "slide_conflict_active_ratio",
     ],
+    "technical_v2_small": [
+        "rhythm_switch_ratio",
+        "low_density_rhythm_switch_ratio",
+        "slide_density_p90",
+        "slide_outer_move_p90",
+        "slide_span_p90",
+    ],
     "hybrid_v1": [
         "busy_density_mean",
         "busy_density_p90",
@@ -82,6 +89,18 @@ PROBE_PRESETS = {
         "slide_outer_move_p90",
         "slide_span_p90",
         "slide_conflict_active_ratio",
+    ],
+    "hybrid_v2_small": [
+        "busy_density_mean",
+        "busy_density_p90",
+        "outer_move_ge_0_25_ratio",
+        "span_jump_p90",
+        "slide_conflict_when_busy_ratio",
+        "rhythm_switch_ratio",
+        "low_density_rhythm_switch_ratio",
+        "slide_density_p90",
+        "slide_outer_move_p90",
+        "slide_span_p90",
     ],
 }
 
