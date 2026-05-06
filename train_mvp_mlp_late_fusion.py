@@ -32,14 +32,77 @@ from train_mvp_mlp import (
 )
 
 
-DEFAULT_PROBE_FEATURES = [
-    "busy_density_mean",
-    "busy_density_p90",
-    "outer_move_ge_0_25_ratio",
-    "span_jump_p90",
-    "slide_conflict_when_busy_ratio",
-    "busy_outer_move_p90",
-]
+PROBE_PRESETS = {
+    "v1": [
+        "busy_density_mean",
+        "busy_density_p90",
+        "outer_move_ge_0_25_ratio",
+        "span_jump_p90",
+        "slide_conflict_when_busy_ratio",
+        "busy_outer_move_p90",
+    ],
+    "v2": [
+        "busy_density_mean",
+        "busy_density_p90",
+        "outer_move_ge_0_25_ratio",
+        "outer_move_ge_0_375_ratio",
+        "outer_move_p90",
+        "span_jump_p90",
+        "span_jump_ge_0_5_ratio",
+        "slide_conflict_when_busy_ratio",
+        "busy_outer_move_mean",
+        "busy_outer_move_p90",
+    ],
+}
+
+DEFAULT_PROBE_FEATURES = PROBE_PRESETS["v1"]
+
+
+class FocalLoss(nn.Module):
+    def __init__(
+        self,
+        gamma: float = 2.0,
+        class_weight: Optional[torch.Tensor] = None,
+    ) -> None:
+        super().__init__()
+        self.gamma = float(gamma)
+        self.register_buffer("class_weight", class_weight if class_weight is not None else None)
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        ce = nn.functional.cross_entropy(
+            logits,
+            targets,
+            weight=self.class_weight,
+            reduction="none",
+        )
+        pt = torch.exp(-ce)
+        focal = ((1.0 - pt) ** self.gamma) * ce
+        return focal.mean()
+
+
+def resolve_probe_features(
+    probe_preset: str,
+    override_probe_features: Sequence[str],
+) -> List[str]:
+    if override_probe_features:
+        return list(override_probe_features)
+    if probe_preset not in PROBE_PRESETS:
+        raise KeyError(f"Unknown probe preset: {probe_preset}")
+    return list(PROBE_PRESETS[probe_preset])
+
+
+def build_criterion(
+    loss_type: str,
+    class_weight: torch.Tensor,
+    device: str,
+    focal_gamma: float,
+) -> nn.Module:
+    class_weight = class_weight.to(device)
+    if loss_type == "ce":
+        return nn.CrossEntropyLoss(weight=class_weight)
+    if loss_type == "focal":
+        return FocalLoss(gamma=focal_gamma, class_weight=class_weight)
+    raise ValueError(f"Unsupported loss_type: {loss_type}")
 
 
 @dataclass
@@ -265,12 +328,16 @@ def main() -> None:
     parser.add_argument("--save-model", type=Path)
     parser.add_argument("--predictions-output", type=Path, default=Path("late_fusion_predictions_test.csv"))
     parser.add_argument("--misclassified-output", type=Path)
-    parser.add_argument("--probe-features", nargs="*", default=DEFAULT_PROBE_FEATURES)
+    parser.add_argument("--probe-preset", type=str, default="v1", choices=sorted(PROBE_PRESETS.keys()))
+    parser.add_argument("--probe-features", nargs="*", default=None)
+    parser.add_argument("--loss-type", type=str, default="ce", choices=["ce", "focal"])
+    parser.add_argument("--focal-gamma", type=float, default=2.0)
     args = parser.parse_args()
 
     if not args.events_dir and not args.encoded_dir:
         raise ValueError("Either --events-dir or --encoded-dir must be provided.")
-    if not args.probe_features:
+    probe_features = resolve_probe_features(args.probe_preset, args.probe_features or [])
+    if not probe_features:
         raise ValueError("At least one probe feature is required.")
 
     config = TrainConfig(
@@ -291,7 +358,7 @@ def main() -> None:
     if not samples:
         raise ValueError(f"No labeled samples found in {data_dir}")
 
-    probe_rows = build_probe_rows(samples, args.probe_events_dir, args.probe_features)
+    probe_rows = build_probe_rows(samples, args.probe_events_dir, probe_features)
 
     if args.encoded_dir:
         base_dataset = PreencodedChartDataset(samples)
@@ -350,18 +417,22 @@ def main() -> None:
     model = LateFusionMLPClassifier(
         LateFusionConfig(
             input_dim=MVPEventEncoder.input_dim,
-            probe_dim=len(args.probe_features),
+            probe_dim=len(probe_features),
             num_classes=config.num_classes,
             pooling=config.pooling,
         )
     ).to(config.device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
-    criterion = nn.CrossEntropyLoss(weight=class_weight.to(config.device))
+    criterion = build_criterion(args.loss_type, class_weight, config.device, args.focal_gamma)
     best_eval_loss = float("inf")
     best_state = None
 
-    print("probe_features", args.probe_features)
+    print("probe_preset", args.probe_preset)
+    print("probe_features", probe_features)
+    print("loss_type", args.loss_type)
+    if args.loss_type == "focal":
+        print("focal_gamma", args.focal_gamma)
     print("class_weight", class_weight.tolist())
 
     for epoch in range(config.epochs):
@@ -397,11 +468,14 @@ def main() -> None:
     if args.save_model:
         payload = {
             "state_dict": model.state_dict(),
-            "probe_features": list(args.probe_features),
+            "probe_preset": args.probe_preset,
+            "probe_features": list(probe_features),
             "probe_mean": probe_normalizer.mean,
             "probe_std": probe_normalizer.std,
             "pooling": config.pooling,
             "input_dim": model.config.input_dim,
+            "loss_type": args.loss_type,
+            "focal_gamma": args.focal_gamma,
         }
         torch.save(payload, args.save_model)
         print(f"saved_model={args.save_model}")
