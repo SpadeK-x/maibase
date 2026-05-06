@@ -1,0 +1,37 @@
+{
+  "recommended_method": "late_fusion_v1_ce",
+  "input_representation": "21_fields_v2_84d",
+  "training_entry": "train_mvp_mlp_late_fusion.py",
+  "probe_preset": "v1",
+  "loss_type": "ce",
+  "pooling": "mean_max",
+  "epochs": 100,
+  "batch_size": 256,
+  "eval_batch_size": 32,
+  "lr": 0.0005,
+  "num_workers": 2,
+  "metrics": {
+    "accuracy": 0.7622950819672131,
+    "recall_13": 0.9464285714285714,
+    "recall_13plus": 0.5238095238095238,
+    "recall_14": 0.7894736842105263,
+    "recall_14plus": 0.6,
+    "13plus_to_13": 12,
+    "13plus_to_14": 8,
+    "14_to_13plus": 1,
+    "14_to_14plus": 3
+  },
+  "probe_features": [
+    "busy_density_mean",
+    "busy_density_p90",
+    "outer_move_ge_0_25_ratio",
+    "span_jump_p90",
+    "slide_conflict_when_busy_ratio",
+    "busy_outer_move_p90"
+  ],
+  "artifacts": {
+    "model": "experiment_runs/late_fusion_probe/model.pth",
+    "predictions": "experiment_runs/late_fusion_probe/predictions_test.csv",
+    "misclassified": "experiment_runs/late_fusion_probe/misclassified_test.csv"
+  }
+}

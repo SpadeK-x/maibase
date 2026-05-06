@@ -1,0 +1,129 @@
+all total=1212 13=539 13+=386 14=209 14+=78
+train total=969 13=427 13+=306 14=169 14+=67
+eval total=121 13=56 13+=38 14=21 14+=6
+test total=122 13=56 13+=42 14=19 14+=5
+probe_preset hybrid_v2_small
+probe_features ['busy_density_mean', 'busy_density_p90', 'outer_move_ge_0_25_ratio', 'span_jump_p90', 'slide_conflict_when_busy_ratio', 'rhythm_switch_ratio', 'low_density_rhythm_switch_ratio', 'slide_density_p90', 'slide_outer_move_p90', 'slide_span_p90']
+loss_type ce
+class_weight [0.5673301815986633, 0.7916666865348816, 1.4334319829940796, 3.6156716346740723]
+epoch=1 train_loss=1.3735 train_acc=0.2508 eval_loss=1.3694 eval_acc=0.2719
+epoch=2 train_loss=1.3610 train_acc=0.2507 eval_loss=1.3575 eval_acc=0.2284
+epoch=3 train_loss=1.3365 train_acc=0.2589 eval_loss=1.3457 eval_acc=0.2362
+epoch=4 train_loss=1.3139 train_acc=0.2825 eval_loss=1.3309 eval_acc=0.3066
+epoch=5 train_loss=1.2926 train_acc=0.3499 eval_loss=1.3145 eval_acc=0.3825
+epoch=6 train_loss=1.2855 train_acc=0.3752 eval_loss=1.2971 eval_acc=0.4416
+epoch=7 train_loss=1.2545 train_acc=0.4289 eval_loss=1.2776 eval_acc=0.4516
+epoch=8 train_loss=1.2377 train_acc=0.4434 eval_loss=1.2569 eval_acc=0.4906
+epoch=9 train_loss=1.2151 train_acc=0.4658 eval_loss=1.2336 eval_acc=0.5141
+epoch=10 train_loss=1.1939 train_acc=0.5008 eval_loss=1.2094 eval_acc=0.5062
+epoch=11 train_loss=1.1571 train_acc=0.5110 eval_loss=1.1823 eval_acc=0.5141
+epoch=12 train_loss=1.1303 train_acc=0.5102 eval_loss=1.1517 eval_acc=0.5141
+epoch=13 train_loss=1.1053 train_acc=0.5083 eval_loss=1.1197 eval_acc=0.5375
+epoch=14 train_loss=1.0967 train_acc=0.5397 eval_loss=1.0956 eval_acc=0.5397
+epoch=15 train_loss=1.0580 train_acc=0.5287 eval_loss=1.0692 eval_acc=0.5653
+epoch=16 train_loss=1.0572 train_acc=0.5332 eval_loss=1.0439 eval_acc=0.5419
+epoch=17 train_loss=1.0326 train_acc=0.5487 eval_loss=1.0204 eval_acc=0.5319
+epoch=18 train_loss=0.9940 train_acc=0.5574 eval_loss=0.9951 eval_acc=0.5709
+epoch=19 train_loss=0.9720 train_acc=0.5832 eval_loss=0.9736 eval_acc=0.5575
+epoch=20 train_loss=0.9597 train_acc=0.5795 eval_loss=0.9551 eval_acc=0.5653
+epoch=21 train_loss=0.9537 train_acc=0.5569 eval_loss=0.9427 eval_acc=0.5553
+epoch=22 train_loss=0.9230 train_acc=0.5805 eval_loss=0.9315 eval_acc=0.5909
+epoch=23 train_loss=0.8978 train_acc=0.6169 eval_loss=0.9125 eval_acc=0.5809
+epoch=24 train_loss=0.8988 train_acc=0.6103 eval_loss=0.8999 eval_acc=0.5909
+epoch=25 train_loss=0.8768 train_acc=0.6191 eval_loss=0.8982 eval_acc=0.6634
+epoch=26 train_loss=0.8527 train_acc=0.5947 eval_loss=0.8811 eval_acc=0.5987
+epoch=27 train_loss=0.8675 train_acc=0.6093 eval_loss=0.8755 eval_acc=0.6244
+epoch=28 train_loss=0.8451 train_acc=0.6066 eval_loss=0.8782 eval_acc=0.6500
+epoch=29 train_loss=0.8285 train_acc=0.6330 eval_loss=0.8659 eval_acc=0.6500
+epoch=30 train_loss=0.8240 train_acc=0.6118 eval_loss=0.8520 eval_acc=0.6444
+epoch=31 train_loss=0.8386 train_acc=0.6231 eval_loss=0.8604 eval_acc=0.6734
+epoch=32 train_loss=0.8281 train_acc=0.6334 eval_loss=0.8530 eval_acc=0.6656
+epoch=33 train_loss=0.8179 train_acc=0.6263 eval_loss=0.8445 eval_acc=0.6578
+epoch=34 train_loss=0.8143 train_acc=0.6385 eval_loss=0.8440 eval_acc=0.6556
+epoch=35 train_loss=0.8031 train_acc=0.6415 eval_loss=0.8298 eval_acc=0.6600
+epoch=36 train_loss=0.8121 train_acc=0.6487 eval_loss=0.8406 eval_acc=0.6534
+epoch=37 train_loss=0.7901 train_acc=0.6416 eval_loss=0.8307 eval_acc=0.6634
+epoch=38 train_loss=0.7912 train_acc=0.6288 eval_loss=0.8217 eval_acc=0.6578
+epoch=39 train_loss=0.7739 train_acc=0.6592 eval_loss=0.8297 eval_acc=0.6713
+epoch=40 train_loss=0.7785 train_acc=0.6581 eval_loss=0.8155 eval_acc=0.6656
+epoch=41 train_loss=0.7787 train_acc=0.6349 eval_loss=0.8119 eval_acc=0.6734
+epoch=42 train_loss=0.7626 train_acc=0.6780 eval_loss=0.8263 eval_acc=0.6656
+epoch=43 train_loss=0.7500 train_acc=0.6659 eval_loss=0.8021 eval_acc=0.6578
+epoch=44 train_loss=0.7739 train_acc=0.6318 eval_loss=0.8039 eval_acc=0.6812
+epoch=45 train_loss=0.7581 train_acc=0.6639 eval_loss=0.8075 eval_acc=0.6734
+epoch=46 train_loss=0.7554 train_acc=0.6720 eval_loss=0.7919 eval_acc=0.6834
+epoch=47 train_loss=0.7495 train_acc=0.6479 eval_loss=0.8127 eval_acc=0.6734
+epoch=48 train_loss=0.7511 train_acc=0.6677 eval_loss=0.7968 eval_acc=0.6734
+epoch=49 train_loss=0.7341 train_acc=0.6516 eval_loss=0.7957 eval_acc=0.6734
+epoch=50 train_loss=0.7384 train_acc=0.6653 eval_loss=0.8017 eval_acc=0.6812
+epoch=51 train_loss=0.7198 train_acc=0.6785 eval_loss=0.7936 eval_acc=0.6656
+epoch=52 train_loss=0.7209 train_acc=0.6661 eval_loss=0.7941 eval_acc=0.6734
+epoch=53 train_loss=0.7203 train_acc=0.6656 eval_loss=0.8000 eval_acc=0.6734
+epoch=54 train_loss=0.7152 train_acc=0.6758 eval_loss=0.7890 eval_acc=0.6656
+epoch=55 train_loss=0.7239 train_acc=0.6653 eval_loss=0.7897 eval_acc=0.6578
+epoch=56 train_loss=0.7360 train_acc=0.6678 eval_loss=0.7937 eval_acc=0.6812
+epoch=57 train_loss=0.7113 train_acc=0.6702 eval_loss=0.7906 eval_acc=0.6734
+epoch=58 train_loss=0.7000 train_acc=0.6821 eval_loss=0.7952 eval_acc=0.6734
+epoch=59 train_loss=0.7086 train_acc=0.6647 eval_loss=0.7806 eval_acc=0.6656
+epoch=60 train_loss=0.6895 train_acc=0.6686 eval_loss=0.7939 eval_acc=0.6812
+epoch=61 train_loss=0.6839 train_acc=0.6801 eval_loss=0.7796 eval_acc=0.6734
+epoch=62 train_loss=0.6946 train_acc=0.6855 eval_loss=0.7806 eval_acc=0.6812
+epoch=63 train_loss=0.6883 train_acc=0.6805 eval_loss=0.7815 eval_acc=0.6734
+epoch=64 train_loss=0.6817 train_acc=0.6906 eval_loss=0.7791 eval_acc=0.6734
+epoch=65 train_loss=0.6648 train_acc=0.7003 eval_loss=0.7812 eval_acc=0.6656
+epoch=66 train_loss=0.6863 train_acc=0.6834 eval_loss=0.7743 eval_acc=0.6812
+epoch=67 train_loss=0.6839 train_acc=0.6910 eval_loss=0.7841 eval_acc=0.6656
+epoch=68 train_loss=0.6816 train_acc=0.6906 eval_loss=0.7802 eval_acc=0.6656
+epoch=69 train_loss=0.6569 train_acc=0.6869 eval_loss=0.7739 eval_acc=0.6812
+epoch=70 train_loss=0.6696 train_acc=0.7092 eval_loss=0.7789 eval_acc=0.6656
+epoch=71 train_loss=0.6864 train_acc=0.6848 eval_loss=0.7796 eval_acc=0.6734
+epoch=72 train_loss=0.6576 train_acc=0.6946 eval_loss=0.7762 eval_acc=0.6734
+epoch=73 train_loss=0.6748 train_acc=0.6826 eval_loss=0.7956 eval_acc=0.6734
+epoch=74 train_loss=0.6708 train_acc=0.6785 eval_loss=0.7832 eval_acc=0.6578
+epoch=75 train_loss=0.6697 train_acc=0.6960 eval_loss=0.7691 eval_acc=0.6578
+epoch=76 train_loss=0.6683 train_acc=0.6784 eval_loss=0.7994 eval_acc=0.6734
+epoch=77 train_loss=0.6559 train_acc=0.6987 eval_loss=0.7871 eval_acc=0.6500
+epoch=78 train_loss=0.6477 train_acc=0.6937 eval_loss=0.7793 eval_acc=0.6756
+epoch=79 train_loss=0.6489 train_acc=0.6894 eval_loss=0.7823 eval_acc=0.6812
+epoch=80 train_loss=0.6444 train_acc=0.6878 eval_loss=0.7877 eval_acc=0.6891
+epoch=81 train_loss=0.6487 train_acc=0.6926 eval_loss=0.7739 eval_acc=0.6734
+epoch=82 train_loss=0.6488 train_acc=0.7000 eval_loss=0.7887 eval_acc=0.6891
+epoch=83 train_loss=0.6353 train_acc=0.7017 eval_loss=0.7845 eval_acc=0.6812
+epoch=84 train_loss=0.6423 train_acc=0.6891 eval_loss=0.7800 eval_acc=0.6734
+epoch=85 train_loss=0.6388 train_acc=0.6889 eval_loss=0.7680 eval_acc=0.6656
+epoch=86 train_loss=0.6303 train_acc=0.7110 eval_loss=0.8142 eval_acc=0.6734
+epoch=87 train_loss=0.6543 train_acc=0.6877 eval_loss=0.7667 eval_acc=0.6734
+epoch=88 train_loss=0.6101 train_acc=0.7126 eval_loss=0.8112 eval_acc=0.6791
+epoch=89 train_loss=0.6480 train_acc=0.6992 eval_loss=0.7636 eval_acc=0.6656
+epoch=90 train_loss=0.6237 train_acc=0.6905 eval_loss=0.7965 eval_acc=0.6812
+epoch=91 train_loss=0.6144 train_acc=0.7131 eval_loss=0.7767 eval_acc=0.6734
+epoch=92 train_loss=0.6175 train_acc=0.6835 eval_loss=0.7897 eval_acc=0.6891
+epoch=93 train_loss=0.6246 train_acc=0.7065 eval_loss=0.7880 eval_acc=0.6734
+epoch=94 train_loss=0.6308 train_acc=0.7001 eval_loss=0.7874 eval_acc=0.6656
+epoch=95 train_loss=0.6167 train_acc=0.7003 eval_loss=0.7842 eval_acc=0.6891
+epoch=96 train_loss=0.6081 train_acc=0.7057 eval_loss=0.7978 eval_acc=0.6734
+epoch=97 train_loss=0.6185 train_acc=0.6867 eval_loss=0.7981 eval_acc=0.6734
+epoch=98 train_loss=0.6122 train_acc=0.7084 eval_loss=0.7904 eval_acc=0.6891
+epoch=99 train_loss=0.6133 train_acc=0.7014 eval_loss=0.7753 eval_acc=0.6734
+epoch=100 train_loss=0.6163 train_acc=0.7130 eval_loss=0.8217 eval_acc=0.6713
+test_loss=0.7150 test_acc=0.7163
+confusion_matrix
+tensor([[51,  4,  1,  0],
+        [14, 19,  8,  1],
+        [ 0,  1, 14,  4],
+        [ 0,  0,  1,  4]])
+per_class_recall
+13: recall=0.9107 (51/56)
+13+: recall=0.4524 (19/42)
+14: recall=0.7368 (14/19)
+14+: recall=0.8000 (4/5)
+per_class_precision
+13: precision=0.7846 (51/65)
+13+: precision=0.7917 (19/24)
+14: precision=0.5833 (14/24)
+14+: precision=0.4444 (4/9)
+predictions_exported=122
+predictions_output=experiment_runs/late_fusion_technical_small_round/hybrid_v2_small_ce/predictions_test.csv
+misclassified_exported=34
+misclassified_output=experiment_runs/late_fusion_technical_small_round/hybrid_v2_small_ce/misclassified_test.csv
+saved_model=experiment_runs/late_fusion_technical_small_round/hybrid_v2_small_ce/model.pth
