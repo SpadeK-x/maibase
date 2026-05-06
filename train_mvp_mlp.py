@@ -9,12 +9,22 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
 
-from mvp_event_encoder import EncodedChartDataset, MVPEventEncoder, PreencodedChartDataset, collate_encoded_charts
+from mvp_event_encoder import (
+    EncodedChartDataset,
+    MVPEventEncoder,
+    PreencodedChartDataset,
+    collate_encoded_charts,
+    get_numeric_feature_indices,
+)
 from mvp_mlp_model import build_model, make_padding_mask
 
 
 DEFAULT_LABEL_CLASSES = ["13", "13+", "14", "14+"]
 LABEL_TO_INDEX = {name: idx for idx, name in enumerate(DEFAULT_LABEL_CLASSES)}
+ABLATION_PRESETS = {
+    "all_except_pattern_novelty_local": ["pattern_novelty_local"],
+    "structure_only_new_fields": ["rhythm_irregularity_local", "burst_compactness", "pattern_novelty_local"],
+}
 
 
 @dataclass
@@ -28,7 +38,7 @@ class TrainConfig:
     eval_ratio: float = 0.1
     seed: int = 42
     pooling: str = "mean"
-    input_dim: int = 84
+    input_dim: int = MVPEventEncoder.input_dim
     num_classes: int = 4
     num_workers: int = 2
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -205,6 +215,7 @@ def run_epoch(
     criterion: nn.Module,
     optimizer: Optional[torch.optim.Optimizer],
     device: str,
+    zero_feature_indices: Optional[torch.Tensor] = None,
 ) -> Tuple[float, float]:
     is_train = optimizer is not None
     model.train(is_train)
@@ -220,6 +231,8 @@ def run_epoch(
         batch_x = batch_x.to(device)
         lengths = lengths.to(device)
         labels = labels.to(device)
+        if zero_feature_indices is not None and zero_feature_indices.numel() > 0:
+            batch_x[:, :, zero_feature_indices] = 0.0
         mask = make_padding_mask(lengths, batch_x.size(1))
 
         logits, _, _ = model(batch_x, mask)
@@ -239,7 +252,13 @@ def run_epoch(
     return total_loss / steps, total_acc / steps
 
 
-def train_model(train_loader: DataLoader, eval_loader: DataLoader, config: TrainConfig, class_weight: Optional[torch.Tensor] = None):
+def train_model(
+    train_loader: DataLoader,
+    eval_loader: DataLoader,
+    config: TrainConfig,
+    class_weight: Optional[torch.Tensor] = None,
+    zero_feature_indices: Optional[torch.Tensor] = None,
+):
     model = build_model(
         input_dim=config.input_dim,
         num_classes=config.num_classes,
@@ -259,9 +278,23 @@ def train_model(train_loader: DataLoader, eval_loader: DataLoader, config: Train
     best_state = None
 
     for epoch in range(config.epochs):
-        train_loss, train_acc = run_epoch(model, train_loader, criterion, optimizer, config.device)
+        train_loss, train_acc = run_epoch(
+            model,
+            train_loader,
+            criterion,
+            optimizer,
+            config.device,
+            zero_feature_indices=zero_feature_indices,
+        )
         with torch.no_grad():
-            eval_loss, eval_acc = run_epoch(model, eval_loader, criterion, None, config.device)
+            eval_loss, eval_acc = run_epoch(
+                model,
+                eval_loader,
+                criterion,
+                None,
+                config.device,
+                zero_feature_indices=zero_feature_indices,
+            )
 
         print(
             f"epoch={epoch + 1} "
@@ -278,29 +311,38 @@ def train_model(train_loader: DataLoader, eval_loader: DataLoader, config: Train
     return model
 
 
-def evaluate_model(model: nn.Module, loader: DataLoader, config: TrainConfig) -> Tuple[float, float]:
+def evaluate_model(
+    model: nn.Module,
+    loader: DataLoader,
+    config: TrainConfig,
+    zero_feature_indices: Optional[torch.Tensor] = None,
+) -> Tuple[float, float]:
     criterion = nn.CrossEntropyLoss()
     with torch.no_grad():
-        return run_epoch(model, loader, criterion, None, config.device)
+        return run_epoch(model, loader, criterion, None, config.device, zero_feature_indices=zero_feature_indices)
 
 
 def collect_predictions(
     model: nn.Module,
     loader: DataLoader,
     device: str,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+    zero_feature_indices: Optional[torch.Tensor] = None,
+) -> Tuple[torch.Tensor, torch.Tensor, List[Dict[str, object]]]:
     model.eval()
     all_preds: List[torch.Tensor] = []
     all_labels: List[torch.Tensor] = []
+    all_metas: List[Dict[str, object]] = []
 
     with torch.no_grad():
-        for batch_x, lengths, labels, _ in loader:
+        for batch_x, lengths, labels, metas in loader:
             if labels is None:
                 continue
 
             batch_x = batch_x.to(device, non_blocking=True)
             lengths = lengths.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
+            if zero_feature_indices is not None and zero_feature_indices.numel() > 0:
+                batch_x[:, :, zero_feature_indices] = 0.0
             mask = make_padding_mask(lengths, batch_x.size(1))
 
             logits, _, _ = model(batch_x, mask)
@@ -308,10 +350,70 @@ def collect_predictions(
 
             all_preds.append(preds.cpu())
             all_labels.append(labels.cpu())
+            all_metas.extend(dict(meta or {}) for meta in metas)
 
     if not all_preds:
-        return torch.empty(0, dtype=torch.long), torch.empty(0, dtype=torch.long)
-    return torch.cat(all_preds), torch.cat(all_labels)
+        return torch.empty(0, dtype=torch.long), torch.empty(0, dtype=torch.long), []
+    return torch.cat(all_preds), torch.cat(all_labels), all_metas
+
+
+def resolve_chart_name(meta: Dict[str, object]) -> str:
+    chart = meta.get("chart")
+    if chart:
+        return str(chart)
+    path_value = meta.get("path")
+    if path_value:
+        return Path(str(path_value)).stem
+    return ""
+
+
+def build_prediction_rows(
+    preds: torch.Tensor,
+    labels: torch.Tensor,
+    metas: Sequence[Dict[str, object]],
+    class_names: Sequence[str],
+) -> List[Dict[str, str]]:
+    rows: List[Dict[str, str]] = []
+    for pred, label, meta in zip(preds.tolist(), labels.tolist(), metas):
+        rows.append(
+            {
+                "chart": resolve_chart_name(meta),
+                "true_label": class_names[int(label)],
+                "pred_label": class_names[int(pred)],
+                "path": str(meta.get("path", "")),
+            }
+        )
+    return rows
+
+
+def export_prediction_rows(rows: Sequence[Dict[str, str]], output_path: Path, misclassified_only: bool = True) -> int:
+    export_rows = [
+        row for row in rows
+        if (row["true_label"] != row["pred_label"]) or not misclassified_only
+    ]
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["chart", "true_label", "pred_label", "path"])
+        writer.writeheader()
+        writer.writerows(export_rows)
+    return len(export_rows)
+
+
+def parse_disable_numeric_fields(
+    preset: Optional[str],
+    disable_numeric_fields: Sequence[str],
+) -> List[str]:
+    disabled: List[str] = []
+    if preset:
+        disabled.extend(ABLATION_PRESETS[preset])
+    disabled.extend(disable_numeric_fields)
+    result: List[str] = []
+    seen = set()
+    for name in disabled:
+        if name not in seen:
+            result.append(name)
+            seen.add(name)
+    return result
 
 
 def print_confusion_and_metrics(
@@ -356,6 +458,22 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--num-workers", type=int, default=2)
     parser.add_argument("--save-model", type=Path, help="Optional output path for the trained model state_dict.")
+    parser.add_argument(
+        "--ablation-preset",
+        choices=sorted(ABLATION_PRESETS.keys()),
+        help="Optional preset for disabling selected new numeric fields.",
+    )
+    parser.add_argument(
+        "--disable-numeric-fields",
+        nargs="*",
+        default=[],
+        help="Optional numeric field names to zero out during train/eval/test.",
+    )
+    parser.add_argument(
+        "--misclassified-output",
+        type=Path,
+        help="Optional CSV path to export misclassified test samples with chart/true/pred labels.",
+    )
     args = parser.parse_args()
 
     if not args.events_dir and not args.encoded_dir:
@@ -371,6 +489,15 @@ def main() -> None:
         num_workers=args.num_workers,
     )
     set_seed(config.seed)
+    disabled_numeric_fields = parse_disable_numeric_fields(args.ablation_preset, args.disable_numeric_fields)
+    zero_feature_indices = None
+    if disabled_numeric_fields:
+        zero_feature_indices = torch.tensor(
+            get_numeric_feature_indices(disabled_numeric_fields),
+            dtype=torch.long,
+            device=config.device,
+        )
+        print("disabled_numeric_fields", disabled_numeric_fields)
 
     events_source = args.encoded_dir if args.encoded_dir else args.events_dir
     file_suffixes = [".pt"] if args.encoded_dir else [".json"]
@@ -426,11 +553,28 @@ def main() -> None:
     )
 
     print("class_weight", class_weight.tolist())
-    model = train_model(train_loader, eval_loader, config, class_weight=class_weight)
-    test_loss, test_acc = evaluate_model(model, test_loader, config)
+    model = train_model(
+        train_loader,
+        eval_loader,
+        config,
+        class_weight=class_weight,
+        zero_feature_indices=zero_feature_indices,
+    )
+    test_loss, test_acc = evaluate_model(model, test_loader, config, zero_feature_indices=zero_feature_indices)
     print(f"test_loss={test_loss:.4f} test_acc={test_acc:.4f}")
-    preds, labels = collect_predictions(model, test_loader, config.device)
+    preds, labels, metas = collect_predictions(
+        model,
+        test_loader,
+        config.device,
+        zero_feature_indices=zero_feature_indices,
+    )
     print_confusion_and_metrics(preds, labels, DEFAULT_LABEL_CLASSES)
+
+    if args.misclassified_output:
+        prediction_rows = build_prediction_rows(preds, labels, metas, DEFAULT_LABEL_CLASSES)
+        exported = export_prediction_rows(prediction_rows, args.misclassified_output, misclassified_only=True)
+        print(f"misclassified_exported={exported}")
+        print(f"misclassified_output={args.misclassified_output}")
 
     if args.save_model:
         torch.save(model.state_dict(), args.save_model)

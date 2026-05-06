@@ -4,6 +4,7 @@ import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from statistics import median
 from typing import Dict, List, Optional, Sequence, Set
 
 
@@ -381,6 +382,7 @@ class SimaiMVPParser:
         previous_time: Optional[float] = None
         previous_inner_mask = [0] * len(INNER_REGIONS)
         previous_outer = [0, 0]
+        raw_delta_history: List[float] = []
 
         for index, group in enumerate(event_groups):
             current_time = group.event_time
@@ -393,18 +395,22 @@ class SimaiMVPParser:
             outer_idx = self.build_outer_idx(group.outer_set)
             inner_mask = self.build_inner_mask(group.inner_set)
 
-            delta_time = 0.0 if previous_time is None else current_time - previous_time
+            delta_time_raw = 0.0 if previous_time is None else current_time - previous_time
             event_type = self.build_event_type(group.object_types, group.outer_set, group.inner_set)
             event_trait = group.trait_label
             hold_active = 1 if active_holds else 0
             slide_active = 1 if active_slides else 0
 
             dominant_slide = self.choose_dominant_slide(active_slides)
+            rhythm_irregularity_local = self.rhythm_irregularity_local(delta_time_raw, raw_delta_history)
+            burst_compactness = self.burst_compactness(event_groups, index)
+            slide_conflict_load = self.slide_conflict_load(group, active_slides_before_new)
+            hand_span_pressure = self.hand_span_pressure(group, active_holds, active_slides)
 
             record = {
                 "event_index": index,
                 "event_time": round(current_time, 6),
-                "delta_time": self.safe_log1p(delta_time),
+                "delta_time": self.safe_log1p(delta_time_raw),
                 "event_type": event_type,
                 "event_trait": event_trait,
                 "outer_active": 1 if group.outer_set else 0,
@@ -426,12 +432,18 @@ class SimaiMVPParser:
                 "slide_span": self.slide_span(dominant_slide),
                 "slide_conflict_flag": self.slide_conflict_flag(group, active_slides_before_new),
                 "local_density_500ms": self.safe_log1p(self.local_density(event_groups, current_time)),
+                "rhythm_irregularity_local": round(rhythm_irregularity_local, 6),
+                "burst_compactness": round(burst_compactness, 6),
+                "slide_conflict_load": round(slide_conflict_load, 6),
+                "hand_span_pressure": round(hand_span_pressure, 6),
+                "pattern_novelty_local": 0.0,
             }
             records.append(record)
 
             previous_time = current_time
             previous_inner_mask = inner_mask
             previous_outer = outer_idx
+            raw_delta_history.append(delta_time_raw)
 
         return records
 
@@ -528,6 +540,63 @@ class SimaiMVPParser:
             return 0
         extra_inputs = [obj for obj in group.atomic_objects if obj.object_type in {"tap", "touch", "hold", "slide"}]
         return 1 if extra_inputs else 0
+
+    def rhythm_irregularity_local(self, delta_time_raw: float, raw_delta_history: Sequence[float]) -> float:
+        if delta_time_raw <= 0:
+            return 0.0
+        recent_non_zero = [value for value in reversed(raw_delta_history) if value > 0][:4]
+        if not recent_non_zero:
+            return 0.0
+        med = float(median(recent_non_zero))
+        eps = 1e-6
+        return abs(math.log(delta_time_raw + eps) - math.log(med + eps))
+
+    def burst_compactness(self, event_groups: Sequence[EventGroup], current_index: int) -> float:
+        start_index = max(0, current_index - 4)
+        window = event_groups[start_index:current_index + 1]
+        if len(window) <= 1:
+            return 0.0
+        span = max(0.0, window[-1].event_time - window[0].event_time)
+        return 1.0 / (span + 1e-6)
+
+    def slide_conflict_load(self, group: EventGroup, active_slides_before_new: Sequence[AtomicObject]) -> float:
+        if not active_slides_before_new:
+            return 0.0
+        new_outer_count = len(group.outer_set)
+        new_inner_count = len(group.inner_set)
+        new_hold_count = len(group.new_holds)
+        new_slide_count = len(group.new_slides)
+        return float(new_outer_count + 0.5 * new_inner_count + 0.5 * new_hold_count + 1.0 * new_slide_count)
+
+    def hand_span_pressure(
+        self,
+        group: EventGroup,
+        active_holds: Sequence[AtomicObject],
+        active_slides: Sequence[AtomicObject],
+    ) -> float:
+        current_outer = list(group.outer_set)
+        current_span = 0.0
+        if len(current_outer) >= 2:
+            current_span = shortest_ring_distance(current_outer[0], current_outer[1]) / 4.0
+
+        active_anchors: List[int] = []
+        for obj in active_holds:
+            active_anchors.extend(pos for pos in obj.outer_positions if pos)
+        for obj in active_slides:
+            if obj.slide_start is not None:
+                active_anchors.append(obj.slide_start)
+            if obj.slide_end is not None:
+                active_anchors.append(obj.slide_end)
+
+        if not current_outer or not active_anchors:
+            return current_span
+
+        max_nearest_dist = 0.0
+        for current_pos in current_outer:
+            nearest = min(shortest_ring_distance(current_pos, anchor) for anchor in active_anchors)
+            max_nearest_dist = max(max_nearest_dist, float(nearest))
+        active_span_bonus = max_nearest_dist / 4.0
+        return current_span + active_span_bonus
 
     def local_density(self, event_groups: Sequence[EventGroup], current_time: float) -> int:
         start = current_time - 0.5

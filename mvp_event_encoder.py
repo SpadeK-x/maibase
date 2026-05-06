@@ -23,7 +23,7 @@ EVENT_TYPE_DIM = len(EVENT_TYPE_VOCAB)  # 5
 EVENT_TRAIT_DIM = len(EVENT_TRAIT_VOCAB)  # 4
 SLIDE_SHAPE_GROUP_DIM = len(SLIDE_SHAPE_GROUP_VOCAB)  # 5
 OUTER_IDX_DIM = OUTER_SLOT_VOCAB_SIZE * 2  # 18
-NUMERIC_DIM = 18
+NUMERIC_DIM = 23
 INPUT_DIM = EVENT_TYPE_DIM + EVENT_TRAIT_DIM + SLIDE_SHAPE_GROUP_DIM + OUTER_IDX_DIM + NUMERIC_DIM + INNER_MASK_DIM
 
 NUMERIC_BLOCK_START = EVENT_TYPE_DIM + EVENT_TRAIT_DIM + SLIDE_SHAPE_GROUP_DIM + OUTER_IDX_DIM
@@ -48,6 +48,11 @@ NUMERIC_FIELD_ORDER = [
     "slide_span",
     "slide_conflict_flag",
     "local_density_500ms",
+    "rhythm_irregularity_local",
+    "burst_compactness",
+    "slide_conflict_load",
+    "hand_span_pressure",
+    "pattern_novelty_local",
 ]
 
 STANDARDIZED_NUMERIC_FIELDS = [
@@ -60,6 +65,11 @@ STANDARDIZED_NUMERIC_FIELDS = [
     "slide_remaining_time",
     "slide_span",
     "local_density_500ms",
+    "rhythm_irregularity_local",
+    "burst_compactness",
+    "slide_conflict_load",
+    "hand_span_pressure",
+    "pattern_novelty_local",
 ]
 STANDARDIZED_NUMERIC_INDICES = [NUMERIC_FIELD_ORDER.index(name) for name in STANDARDIZED_NUMERIC_FIELDS]
 
@@ -85,9 +95,18 @@ def normalize_numeric(value) -> float:
     raise ValueError(f"Expected numeric value, got {value!r}")
 
 
+def get_numeric_feature_indices(field_names: Sequence[str]) -> List[int]:
+    indices: List[int] = []
+    for name in field_names:
+        if name not in NUMERIC_FIELD_ORDER:
+            raise KeyError(f"Unknown numeric field: {name}")
+        indices.append(NUMERIC_BLOCK_START + NUMERIC_FIELD_ORDER.index(name))
+    return indices
+
+
 @dataclass
 class EncodedChart:
-    events: torch.Tensor  # [T, 84]
+    events: torch.Tensor  # [T, INPUT_DIM]
     length: int
     label: Optional[int] = None
     meta: Optional[Dict[str, object]] = None
@@ -101,7 +120,7 @@ class NumericNormalizerState:
 
 class MVPEventEncoder:
     """
-    Encodes one parsed event record into the fixed 84-dim input vector for the MVP MLP.
+    Encodes one parsed event record into the fixed input vector for the MVP event models.
     """
 
     input_dim: int = INPUT_DIM
@@ -136,7 +155,7 @@ class MVPEventEncoder:
         vector.extend(one_hot(int(outer_idx[0]), OUTER_SLOT_VOCAB_SIZE))
         vector.extend(one_hot(int(outer_idx[1]), OUTER_SLOT_VOCAB_SIZE))
 
-        # 2. numeric block (18 dims, fixed order)
+        # 2. numeric block (23 dims, fixed order)
         vector.append(normalize_numeric(record["delta_time"]))
         vector.append(normalize_numeric(record["outer_active"]))
         vector.append(normalize_numeric(outer_pos_sin[0]))
@@ -155,6 +174,11 @@ class MVPEventEncoder:
         vector.append(normalize_numeric(record["slide_span"]))
         vector.append(normalize_numeric(record["slide_conflict_flag"]))
         vector.append(normalize_numeric(record["local_density_500ms"]))
+        vector.append(normalize_numeric(record.get("rhythm_irregularity_local", 0.0)))
+        vector.append(normalize_numeric(record.get("burst_compactness", 0.0)))
+        vector.append(normalize_numeric(record.get("slide_conflict_load", 0.0)))
+        vector.append(normalize_numeric(record.get("hand_span_pressure", 0.0)))
+        vector.append(normalize_numeric(record.get("pattern_novelty_local", 0.0)))
 
         # 3. inner multi-hot block
         vector.extend(normalize_numeric(x) for x in inner_mask)
@@ -272,7 +296,7 @@ class PreencodedChartDataset(Dataset):
 
     Each file is expected to contain:
       {
-        "events": FloatTensor [T, 84],
+        "events": FloatTensor [T, INPUT_DIM],
         "length": int,
         "label": int,
         "meta": dict
@@ -292,7 +316,8 @@ class PreencodedChartDataset(Dataset):
         events = payload["events"].to(torch.float32)
         length = int(payload["length"])
         label = payload.get("label")
-        meta = dict(payload.get("meta") or {})
+        meta = dict(sample.get("meta") or {})
+        meta.update(dict(payload.get("meta") or {}))
         meta["path"] = str(path)
         return EncodedChart(events=events, length=length, label=label, meta=meta)
 
@@ -350,6 +375,11 @@ def smoke_test(json_path: Optional[str] = None) -> None:
             "slide_span": 0.0,
             "slide_conflict_flag": 0,
             "local_density_500ms": 0.69,
+            "rhythm_irregularity_local": 0.0,
+            "burst_compactness": 0.0,
+            "slide_conflict_load": 0.0,
+            "hand_span_pressure": 0.0,
+            "pattern_novelty_local": 0.0,
         }
         x = encoder.encode_records([fake_record])
         print("encoded_shape:", tuple(x.shape))

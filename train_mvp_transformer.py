@@ -7,14 +7,17 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
 
 from mvp_event_encoder import EncodedChartDataset, MVPEventEncoder, PreencodedChartDataset, collate_encoded_charts
+from mvp_event_encoder import get_numeric_feature_indices
 from mvp_mlp_model import make_padding_mask
 from mvp_transformer_model import build_transformer_model
 from train_mvp_mlp import (
+    ABLATION_PRESETS,
     TrainConfig,
     compute_class_weight,
     discover_samples,
     evaluate_model as _unused_evaluate_model,
     fit_train_normalizer,
+    parse_disable_numeric_fields,
     print_dataset_distributions,
     set_seed,
     split_dataset,
@@ -32,6 +35,7 @@ def run_epoch(
     criterion: nn.Module,
     optimizer: Optional[torch.optim.Optimizer],
     device: str,
+    zero_feature_indices: Optional[torch.Tensor] = None,
 ) -> Tuple[float, float]:
     is_train = optimizer is not None
     model.train(is_train)
@@ -47,6 +51,8 @@ def run_epoch(
         batch_x = batch_x.to(device, non_blocking=True)
         lengths = lengths.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
+        if zero_feature_indices is not None and zero_feature_indices.numel() > 0:
+            batch_x[:, :, zero_feature_indices] = 0.0
         mask = make_padding_mask(lengths, batch_x.size(1))
 
         logits, _, _ = model(batch_x, mask)
@@ -66,9 +72,15 @@ def run_epoch(
     return total_loss / steps, total_acc / steps
 
 
-def evaluate_model(model: nn.Module, loader: DataLoader, criterion: nn.Module, device: str) -> Tuple[float, float]:
+def evaluate_model(
+    model: nn.Module,
+    loader: DataLoader,
+    criterion: nn.Module,
+    device: str,
+    zero_feature_indices: Optional[torch.Tensor] = None,
+) -> Tuple[float, float]:
     with torch.no_grad():
-        return run_epoch(model, loader, criterion, None, device)
+        return run_epoch(model, loader, criterion, None, device, zero_feature_indices=zero_feature_indices)
 
 
 def main() -> None:
@@ -90,6 +102,17 @@ def main() -> None:
     parser.add_argument("--num-layers", type=int, default=3)
     parser.add_argument("--pooling", type=str, default="cls", choices=["cls", "cls_mean"])
     parser.add_argument("--save-model", type=Path)
+    parser.add_argument(
+        "--ablation-preset",
+        choices=sorted(ABLATION_PRESETS.keys()),
+        help="Optional preset for disabling selected new numeric fields.",
+    )
+    parser.add_argument(
+        "--disable-numeric-fields",
+        nargs="*",
+        default=[],
+        help="Optional numeric field names to zero out during train/eval/test.",
+    )
     args = parser.parse_args()
 
     if not args.events_dir and not args.encoded_dir:
@@ -105,6 +128,15 @@ def main() -> None:
         num_workers=args.num_workers,
     )
     set_seed(config.seed)
+    disabled_numeric_fields = parse_disable_numeric_fields(args.ablation_preset, args.disable_numeric_fields)
+    zero_feature_indices = None
+    if disabled_numeric_fields:
+        zero_feature_indices = torch.tensor(
+            get_numeric_feature_indices(disabled_numeric_fields),
+            dtype=torch.long,
+            device=config.device,
+        )
+        print("disabled_numeric_fields", disabled_numeric_fields)
 
     data_dir = args.encoded_dir if args.encoded_dir else args.events_dir
     suffixes = [".pt"] if args.encoded_dir else [".json"]
@@ -183,8 +215,21 @@ def main() -> None:
     best_state = None
 
     for epoch in range(config.epochs):
-        train_loss, train_acc = run_epoch(model, train_loader, criterion, optimizer, config.device)
-        eval_loss, eval_acc = evaluate_model(model, eval_loader, criterion, config.device)
+        train_loss, train_acc = run_epoch(
+            model,
+            train_loader,
+            criterion,
+            optimizer,
+            config.device,
+            zero_feature_indices=zero_feature_indices,
+        )
+        eval_loss, eval_acc = evaluate_model(
+            model,
+            eval_loader,
+            criterion,
+            config.device,
+            zero_feature_indices=zero_feature_indices,
+        )
         print(
             f"epoch={epoch + 1} "
             f"train_loss={train_loss:.4f} train_acc={train_acc:.4f} "
@@ -197,7 +242,13 @@ def main() -> None:
     if best_state is not None:
         model.load_state_dict(best_state)
 
-    test_loss, test_acc = evaluate_model(model, test_loader, criterion, config.device)
+    test_loss, test_acc = evaluate_model(
+        model,
+        test_loader,
+        criterion,
+        config.device,
+        zero_feature_indices=zero_feature_indices,
+    )
     print(f"test_loss={test_loss:.4f} test_acc={test_acc:.4f}")
 
     if args.save_model:
