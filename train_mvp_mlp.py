@@ -22,8 +22,7 @@ from mvp_mlp_model import build_model, make_padding_mask
 DEFAULT_LABEL_CLASSES = ["13", "13+", "14", "14+"]
 LABEL_TO_INDEX = {name: idx for idx, name in enumerate(DEFAULT_LABEL_CLASSES)}
 ABLATION_PRESETS = {
-    "all_except_pattern_novelty_local": ["pattern_novelty_local"],
-    "structure_only_new_fields": ["rhythm_irregularity_local", "burst_compactness", "pattern_novelty_local"],
+    "baseline_21_fields": ["slide_conflict_load", "hand_span_pressure"],
 }
 
 

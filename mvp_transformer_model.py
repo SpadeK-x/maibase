@@ -8,7 +8,7 @@ import torch.nn as nn
 
 @dataclass
 class TransformerConfig:
-    input_dim: int = 89
+    input_dim: int = 86
     model_dim: int = 128
     ff_dim: int = 256
     num_heads: int = 4
@@ -125,7 +125,7 @@ class MVPTransformerClassifier(nn.Module):
 
 
 def build_transformer_model(
-    input_dim: int = 89,
+    input_dim: int = 86,
     num_classes: int = 4,
     model_dim: int = 128,
     ff_dim: int = 256,
@@ -149,7 +149,7 @@ def build_transformer_model(
 
 def smoke_test() -> None:
     model = build_transformer_model()
-    x = torch.randn(3, 20, 89)
+    x = torch.randn(3, 20, 86)
     mask = torch.ones(3, 20, dtype=torch.bool)
     logits, chart_embedding, token_embeddings = model(x, mask)
     print("logits:", tuple(logits.shape))
