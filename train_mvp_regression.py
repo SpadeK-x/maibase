@@ -90,9 +90,17 @@ def discover_regression_samples(data_dir: Path, labels_csv: Path, file_suffixes:
 
 
 class RegressionDataset(Dataset):
-    def __init__(self, base_dataset: Dataset, targets: Sequence[float]) -> None:
+    def __init__(
+        self,
+        base_dataset: Dataset,
+        targets: Sequence[float],
+        target_mean: float,
+        target_std: float,
+    ) -> None:
         self.base_dataset = base_dataset
         self.targets = list(targets)
+        self.target_mean = float(target_mean)
+        self.target_std = float(target_std)
 
     def __len__(self) -> int:
         return len(self.base_dataset)
@@ -100,8 +108,10 @@ class RegressionDataset(Dataset):
     def __getitem__(self, index: int):
         encoded = self.base_dataset[index]
         meta = dict(encoded.meta or {})
-        meta["target_level"] = float(self.targets[index])
-        return encoded.events, encoded.length, float(self.targets[index]), meta
+        raw_target = float(self.targets[index])
+        meta["target_level"] = raw_target
+        normalized_target = (raw_target - self.target_mean) / self.target_std
+        return encoded.events, encoded.length, normalized_target, meta
 
 
 def collate_regression_batch(batch):
@@ -153,6 +163,15 @@ def split_dataset(dataset: Dataset, config: RegressionConfig):
     )
 
 
+def fit_target_normalizer(targets: Sequence[float], train_indices: Sequence[int]) -> Tuple[float, float]:
+    values = torch.tensor([float(targets[i]) for i in train_indices], dtype=torch.float32)
+    mean = float(values.mean().item())
+    std = float(values.std(unbiased=False).item())
+    if std < 1e-6:
+        std = 1.0
+    return mean, std
+
+
 def run_epoch(
     model: nn.Module,
     loader: DataLoader,
@@ -195,6 +214,8 @@ def collect_regression_predictions(
     model: nn.Module,
     loader: DataLoader,
     device: str,
+    target_mean: float,
+    target_std: float,
 ) -> Tuple[torch.Tensor, torch.Tensor, List[Dict[str, object]]]:
     model.eval()
     all_preds: List[torch.Tensor] = []
@@ -207,8 +228,10 @@ def collect_regression_predictions(
             lengths = lengths.to(device)
             mask = make_padding_mask(lengths, batch_x.size(1))
             preds, _, _ = model(batch_x, mask)
-            all_preds.append(preds.squeeze(-1).cpu())
-            all_targets.append(targets.cpu())
+            preds = preds.squeeze(-1).cpu() * target_std + target_mean
+            raw_targets = targets.cpu() * target_std + target_mean
+            all_preds.append(preds)
+            all_targets.append(raw_targets)
             all_metas.extend(dict(meta or {}) for meta in metas)
 
     return torch.cat(all_preds), torch.cat(all_targets), all_metas
@@ -286,12 +309,22 @@ def main() -> None:
 
     use_encoded = args.encoded_dir is not None
     base_dataset, fit_dataset = build_regression_datasets(samples, use_encoded=use_encoded)
-    train_subset, eval_subset, test_subset = split_dataset(base_dataset, config)
+    initial_train_subset, _, _ = split_dataset(base_dataset, config)
+    target_mean, target_std = fit_target_normalizer(
+        [float(sample["target"]) for sample in samples],
+        initial_train_subset.indices,
+    )
+    print(f"target_mean={target_mean:.4f} target_std={target_std:.4f}")
 
     if not use_encoded:
-        fit_train_normalizer(fit_dataset, train_subset)
+        fit_train_normalizer(fit_dataset, initial_train_subset)
 
-    regression_dataset = RegressionDataset(base_dataset, [float(sample["target"]) for sample in samples])
+    regression_dataset = RegressionDataset(
+        base_dataset,
+        [float(sample["target"]) for sample in samples],
+        target_mean=target_mean,
+        target_std=target_std,
+    )
     train_subset, eval_subset, test_subset = split_dataset(regression_dataset, config)
 
     train_loader = DataLoader(
@@ -321,7 +354,7 @@ def main() -> None:
 
     model = build_model(input_dim=config.input_dim, num_classes=1, pooling=config.pooling).to(config.device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
-    criterion = nn.SmoothL1Loss()
+    criterion = nn.MSELoss()
 
     best_eval_loss = float("inf")
     best_state = None
@@ -344,7 +377,13 @@ def main() -> None:
     if best_state is not None:
         model.load_state_dict(best_state)
 
-    preds, targets, metas = collect_regression_predictions(model, test_loader, config.device)
+    preds, targets, metas = collect_regression_predictions(
+        model,
+        test_loader,
+        config.device,
+        target_mean=target_mean,
+        target_std=target_std,
+    )
     mae_value = torch.mean(torch.abs(preds - targets)).item()
     rmse_value = rmse(preds, targets)
     print(f"test_mae={mae_value:.4f}")
