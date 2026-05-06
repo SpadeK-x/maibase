@@ -63,6 +63,19 @@ def fit_linear_calibration(preds: torch.Tensor, targets: torch.Tensor) -> Tuple[
     return float(a), float(b)
 
 
+def fit_target_normalizer(level_map: Dict[str, float], samples: Sequence[Dict[str, object]], train_indices: Sequence[int]) -> Tuple[float, float]:
+    values = []
+    for index in train_indices:
+        chart = str((samples[index].get("meta") or {}).get("chart", ""))
+        values.append(float(level_map[chart]))
+    tensor = torch.tensor(values, dtype=torch.float32)
+    mean = float(tensor.mean().item())
+    std = float(tensor.std(unbiased=False).item())
+    if std < 1e-6:
+        std = 1.0
+    return mean, std
+
+
 def apply_linear_calibration(preds: torch.Tensor, a: float, b: float) -> torch.Tensor:
     return preds * a + b
 
@@ -75,6 +88,8 @@ def collect_regression_outputs(
     model: torch.nn.Module,
     loader: DataLoader,
     device: str,
+    target_mean: float,
+    target_std: float,
 ) -> Tuple[torch.Tensor, torch.Tensor, List[Dict[str, object]]]:
     model.eval()
     all_preds: List[torch.Tensor] = []
@@ -87,7 +102,8 @@ def collect_regression_outputs(
             lengths = lengths.to(device, non_blocking=True)
             mask = make_padding_mask(lengths, batch_x.size(1))
             preds, _, _ = model(batch_x, mask)
-            all_preds.append(preds.squeeze(-1).cpu())
+            denorm_preds = preds.squeeze(-1).cpu() * target_std + target_mean
+            all_preds.append(denorm_preds)
             all_targets.append(targets.cpu())
             all_metas.extend(dict(meta or {}) for meta in metas)
 
@@ -251,17 +267,29 @@ def main() -> None:
         collate_fn=collate_level_batch,
     )
 
+    target_mean, target_std = fit_target_normalizer(level_map, base_samples, train_set.indices)
+    print(f"target_mean={target_mean:.4f} target_std={target_std:.4f}")
+
     state_dict = torch.load(args.model_path, map_location=config.device)
     input_dim = infer_input_dim_from_state_dict(state_dict)
     print("model_input_dim", input_dim)
     model = build_model(input_dim=input_dim, num_classes=1, pooling=config.pooling).to(config.device)
     model.load_state_dict(state_dict)
 
-    eval_preds, eval_targets, _ = collect_regression_outputs(model, eval_loader, config.device)
-    test_preds, test_targets, test_metas = collect_regression_outputs(model, test_loader, config.device)
-
-    if input_dim != eval_loader.dataset[0][0].size(-1):
-        eval_preds = eval_preds  # keep lint quiet
+    eval_preds, eval_targets, _ = collect_regression_outputs(
+        model,
+        eval_loader,
+        config.device,
+        target_mean=target_mean,
+        target_std=target_std,
+    )
+    test_preds, test_targets, test_metas = collect_regression_outputs(
+        model,
+        test_loader,
+        config.device,
+        target_mean=target_mean,
+        target_std=target_std,
+    )
 
     if args.use_linear_calibration:
         a, b = fit_linear_calibration(eval_preds, eval_targets)
