@@ -284,6 +284,65 @@ def evaluate_model(model: nn.Module, loader: DataLoader, config: TrainConfig) ->
         return run_epoch(model, loader, criterion, None, config.device)
 
 
+def collect_predictions(
+    model: nn.Module,
+    loader: DataLoader,
+    device: str,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    model.eval()
+    all_preds: List[torch.Tensor] = []
+    all_labels: List[torch.Tensor] = []
+
+    with torch.no_grad():
+        for batch_x, lengths, labels, _ in loader:
+            if labels is None:
+                continue
+
+            batch_x = batch_x.to(device, non_blocking=True)
+            lengths = lengths.to(device, non_blocking=True)
+            labels = labels.to(device, non_blocking=True)
+            mask = make_padding_mask(lengths, batch_x.size(1))
+
+            logits, _, _ = model(batch_x, mask)
+            preds = logits.argmax(dim=-1)
+
+            all_preds.append(preds.cpu())
+            all_labels.append(labels.cpu())
+
+    if not all_preds:
+        return torch.empty(0, dtype=torch.long), torch.empty(0, dtype=torch.long)
+    return torch.cat(all_preds), torch.cat(all_labels)
+
+
+def print_confusion_and_metrics(
+    preds: torch.Tensor,
+    labels: torch.Tensor,
+    class_names: Sequence[str],
+) -> None:
+    num_classes = len(class_names)
+    cm = torch.zeros(num_classes, num_classes, dtype=torch.long)
+
+    for y_true, y_pred in zip(labels, preds):
+        cm[int(y_true), int(y_pred)] += 1
+
+    print("confusion_matrix")
+    print(cm)
+
+    print("per_class_recall")
+    for i, name in enumerate(class_names):
+        tp = cm[i, i].item()
+        total_true = cm[i].sum().item()
+        recall = tp / total_true if total_true > 0 else 0.0
+        print(f"{name}: recall={recall:.4f} ({tp}/{total_true})")
+
+    print("per_class_precision")
+    for i, name in enumerate(class_names):
+        tp = cm[i, i].item()
+        total_pred = cm[:, i].sum().item()
+        precision = tp / total_pred if total_pred > 0 else 0.0
+        print(f"{name}: precision={precision:.4f} ({tp}/{total_pred})")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train the MVP MLP classifier on event-json features.")
     parser.add_argument("--events-dir", type=Path, help="Directory containing per-chart event JSON files.")
@@ -370,6 +429,8 @@ def main() -> None:
     model = train_model(train_loader, eval_loader, config, class_weight=class_weight)
     test_loss, test_acc = evaluate_model(model, test_loader, config)
     print(f"test_loss={test_loss:.4f} test_acc={test_acc:.4f}")
+    preds, labels = collect_predictions(model, test_loader, config.device)
+    print_confusion_and_metrics(preds, labels, DEFAULT_LABEL_CLASSES)
 
     if args.save_model:
         torch.save(model.state_dict(), args.save_model)
