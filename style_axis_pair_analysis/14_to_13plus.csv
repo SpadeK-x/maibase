@@ -1,0 +1,2 @@
+chart,true_label,pred_label,raw_level,cluster_id,distance_to_centroid,density_load,rhythm_complexity,movement_stretch,occupancy_pressure,slide_complexity,touch_cross_mix
+11491_master,14,13+,14.0,6,0.887238,-0.260905,0.58529,-0.08857,-0.304808,0.494526,-0.155383
