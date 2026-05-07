@@ -142,6 +142,7 @@ class SegmentFusionConfig:
     segment_num_layers: int = 2
     segment_dropout: float = 0.2
     max_segments: int = 64
+    segment_branch_scale: float = 1.0
 
 
 class SegmentFusionClassifier(nn.Module):
@@ -259,6 +260,7 @@ class SegmentFusionClassifier(nn.Module):
             src_key_padding_mask=~segment_mask,
         )
         segment_chart_embedding = self.segment_pooler(transformed_segments, segment_mask)
+        segment_chart_embedding = segment_chart_embedding * float(self.config.segment_branch_scale)
 
         fused_embedding = torch.cat([global_embedding, segment_chart_embedding, probe_x], dim=-1)
         logits = self.classifier(fused_embedding)
@@ -374,6 +376,7 @@ def main() -> None:
     parser.add_argument("--segment-num-heads", type=int, default=4)
     parser.add_argument("--segment-num-layers", type=int, default=2)
     parser.add_argument("--segment-dropout", type=float, default=0.2)
+    parser.add_argument("--segment-branch-scale", type=float, default=1.0)
     args = parser.parse_args()
 
     if not args.events_dir and not args.encoded_dir:
@@ -471,6 +474,7 @@ def main() -> None:
             segment_num_layers=args.segment_num_layers,
             segment_dropout=args.segment_dropout,
             max_segments=args.max_segments,
+            segment_branch_scale=args.segment_branch_scale,
         )
     ).to(config.device)
 
@@ -486,6 +490,7 @@ def main() -> None:
     print("max_segments", args.max_segments)
     print("segment_num_layers", args.segment_num_layers)
     print("segment_num_heads", args.segment_num_heads)
+    print("segment_branch_scale", args.segment_branch_scale)
     print("class_weight", class_weight.tolist())
 
     for epoch in range(config.epochs):
@@ -533,6 +538,7 @@ def main() -> None:
             "max_segments": args.max_segments,
             "segment_num_layers": args.segment_num_layers,
             "segment_num_heads": args.segment_num_heads,
+            "segment_branch_scale": args.segment_branch_scale,
         }
         torch.save(payload, args.save_model)
         print(f"saved_model={args.save_model}")
